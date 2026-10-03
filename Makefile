@@ -309,6 +309,12 @@ $(HEADER): public.h
 $(TARGETDIR)/%.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# The WIN64 context switch is MASM assembly, md_win64.asm.
+ifeq ($(OS), WIN64)
+$(TARGETDIR)/%.o: %.asm
+	ml64 -nologo -c -Fo$@ $<
+endif
+
 $(TARGETDIR)/%.o: %.c common.h md.h
 	$(CC) $(CFLAGS) -c $< $(CC_OUT)$@
 

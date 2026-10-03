@@ -39,13 +39,9 @@ if (MSVC)
     foreach (FILE event.c io.c key.c sched.c stk.c sync.c common.c)
         list(APPEND SOURCE_FILES ${ST_DIR}/${FILE})
     endforeach ()
-    # The context switch is md_win64.asm once ported, and a stub in md_win64.c before.
-    if (EXISTS ${ST_DIR}/md_win64.asm)
-        enable_language(ASM_MASM)
-        list(APPEND SOURCE_FILES ${ST_DIR}/md_win64.asm)
-    else ()
-        list(APPEND SOURCE_FILES ${ST_DIR}/md_win64.c)
-    endif ()
+    # The context switch is MASM assembly.
+    enable_language(ASM_MASM)
+    list(APPEND SOURCE_FILES ${ST_DIR}/md_win64.asm)
 
     # Google Test with the same DLL runtime (/MD) as the utest.
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)

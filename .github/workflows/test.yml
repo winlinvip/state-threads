@@ -61,7 +61,8 @@ jobs:
 
   # Native Windows with MSVC, built with GNU make from Git Bash. st_utest runs with
   # ST_EVENTSYS_DEFAULT and ST_EVENTSYS_ALT, and skips the few tests that Windows TCP
-  # behavior cannot pass, in the test code itself.
+  # behavior cannot pass, in the test code itself. Then auto/tools.sh runs every
+  # integration tool, in the ST default and SRS builds, as on Linux and macOS.
   windows:
     name: actions-test-build-win64
     runs-on: windows-latest
@@ -115,6 +116,14 @@ jobs:
         env:
           ST_UTEST_EVENTSYS: alt
         run: ./obj/st_utest.exe
+      - name: Run ST tools
+        shell: bash
+        timeout-minutes: 10
+        run: ./auto/tools.sh
+      - name: Run ST tools in the SRS build
+        shell: bash
+        timeout-minutes: 10
+        run: EXTRA_CFLAGS=-DMALLOC_STACK ./auto/tools.sh
 
       ################################################################
       # Build

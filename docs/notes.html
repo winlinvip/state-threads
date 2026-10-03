@@ -167,10 +167,21 @@ connection; a shorter timeout gives <TT>ETIME</TT>.</LI>
 <LI>On a UDP socket, an ICMP port unreachable makes the next receive fail with
 <TT>ECONNREFUSED</TT>. A datagram larger than the buffer returns the bytes that
 fit, as on POSIX.</LI>
+<LI><TT>AF_UNIX</TT> sockets are stream only, with no datagram sockets, and a
+connect to a missing path fails with <TT>ECONNREFUSED</TT>, not
+<TT>ENOENT</TT>.</LI>
 <LI>MSVC AddressSanitizer works with <TT>MD_ASAN</TT>, but not with
 <TT>-fsanitize-address-use-after-return</TT>, which gives false reports with
 MSVC 14.44.</LI>
 </UL>
+<P>
+The integration tools in <TT>tools/</TT> build with MSVC, and
+<TT>auto/tools.sh</TT> runs them from Git Bash as on POSIX. ST on Windows is
+sockets only, so the tools use a loopback TCP pair for a pipe, and an
+<TT>AF_UNIX</TT> stream pair, or a loopback UDP pair for datagrams, for
+<TT>socketpair()</TT>. The <TT>pipe</TT> tool, which needs pipes, FIFOs,
+files, and signals, is skipped, and the few checks that Windows does not
+support, such as partial writes and rlimits, are skipped, each with a comment.
 <P>
 
 <A NAME="signals">

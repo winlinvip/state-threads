@@ -211,6 +211,29 @@ cmake --build C:\st-build --config Debug --target st_utest
 > Note: Use a short build directory, because MSBuild fails when its paths are too long. The Makefile stays the
 > main build, and CMake also builds the `helloworld`, `porting`, and `verify` tools.
 
+## Windows: Tools
+
+The integration tools in `tools/` build with MSVC and run with the same runner as on Linux and macOS, in Git
+Bash with the MSVC environment (see [Windows: Usage](#windows-usage)). It builds the library with
+`make -B win64-debug`, then builds each tool and runs `<name>.exe` with `ST_TOOL_EVENTSYS=select` and `alt`
+(both are WSAPoll on Windows), and prints `All tools OK`. Run it in the ST default build and in the SRS
+build, as CI does:
+
+```bash
+./auto/tools.sh
+EXTRA_CFLAGS=-DMALLOC_STACK ./auto/tools.sh
+```
+
+The arguments name the tools to run, for example `./auto/tools.sh tcp udp`. The runner leaves the library
+built with `EXTRA_CFLAGS`, so rebuild with `make -B win64-debug-utest` before the utest.
+
+On Windows, ST is sockets only, so the tools make each pipe a loopback TCP pair and each `socketpair` an
+`AF_UNIX` stream pair, or a loopback UDP pair for datagrams. The `pipe` tool, which needs pipes, FIFOs,
+`st_open` files, and signals, prints `SKIP pipe: <why>` instead of `OK`. A few checks that Windows does not
+support are skipped there, each with a comment: the partial writes on timeout in `tcp` (Winsock never sends
+part of a non-blocking send), the `RLIMIT_NOFILE` checks in `lifecycle` and `stress`, reading back
+`O_NONBLOCK` in `poll`, and the `AF_UNIX` datagram echo and the `ENOENT` of a missing path in `unix`.
+
 ## Linux: Coverage
 
 > Note: We use [Google test](https://github.com/google/googletest/releases/tag/release-1.11.0) in `utest/gtest-fit`.

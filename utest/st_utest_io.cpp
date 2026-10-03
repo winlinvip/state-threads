@@ -2476,3 +2476,475 @@ VOID TEST(WinsockTest, InitStartsAndDestroyCleansUp)
     EXPECT_EQ(WINSOCK_TEST_CHILD_OK, winsock_test_run_child("WinsockTest.DISABLED_ChildInitAndDestroy"));
 }
 #endif
+
+#ifdef _WIN32 // Windows only: Winsock under the POSIX calls of io.c
+// The POSIX calls io.c makes, which Windows implements with Winsock. The st_* I/O functions call them, and wait in
+// st_netfd_poll while they fail with EAGAIN.
+extern "C" int _st_win64_ioctl(int fd, unsigned long request, int *arg);
+extern "C" int _st_win64_fcntl(int fd, int cmd, int arg);
+extern "C" int _st_win64_close(int fd);
+extern "C" ssize_t _st_win64_read(int fd, void *buf, size_t nbyte);
+extern "C" ssize_t _st_win64_write(int fd, const void *buf, size_t nbyte);
+extern "C" ssize_t _st_win64_readv(int fd, const struct iovec *iov, int iov_size);
+extern "C" ssize_t _st_win64_writev(int fd, const struct iovec *iov, int iov_size);
+extern "C" int _st_win64_recvmsg(int fd, struct msghdr *msg, int flags);
+extern "C" int _st_win64_sendmsg(int fd, const struct msghdr *msg, int flags);
+extern "C" int _st_win64_recvfrom(int fd, void *buf, int len, int flags, struct sockaddr *from, socklen_t *fromlen);
+
+// The fcntl commands and flag that io.c defines on Windows, which has no fcntl for sockets.
+#define WIN_IO_F_GETFL 3
+#define WIN_IO_F_SETFL 4
+#define WIN_IO_O_NONBLOCK 04000
+
+// A connected loopback TCP pair of blocking sockets, as int descriptors.
+static bool win_io_tcp_pair(int fds[2])
+{
+    fds[0] = fds[1] = -1;
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listener == INVALID_SOCKET) return false;
+
+    sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int addrlen = sizeof(addr);
+    SOCKET client = INVALID_SOCKET, server = INVALID_SOCKET;
+    if (::bind(listener, (sockaddr*)&addr, addrlen) == 0 && ::listen(listener, 1) == 0 &&
+        ::getsockname(listener, (sockaddr*)&addr, &addrlen) == 0) {
+        client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (client != INVALID_SOCKET && ::connect(client, (sockaddr*)&addr, addrlen) == 0) {
+            server = ::accept(listener, NULL, NULL);
+        }
+    }
+    closesocket(listener);
+
+    if (server == INVALID_SOCKET) {
+        if (client != INVALID_SOCKET) closesocket(client);
+        return false;
+    }
+    fds[0] = (int)client;
+    fds[1] = (int)server;
+    return true;
+}
+
+// A UDP socket bound to a loopback port, with its address.
+static bool win_io_udp_socket(int& fd, sockaddr_in& addr)
+{
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET) return false;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int addrlen = sizeof(addr);
+    if (::bind(s, (sockaddr*)&addr, addrlen) != 0 || ::getsockname(s, (sockaddr*)&addr, &addrlen) != 0) {
+        closesocket(s);
+        return false;
+    }
+    fd = (int)s;
+    return true;
+}
+
+// Waits until the socket has data to read.
+static bool win_io_wait_readable(int fd)
+{
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET((SOCKET)fd, &rfds);
+    timeval tv = {5, 0};
+    return ::select(0, &rfds, NULL, NULL, &tv) == 1;
+}
+
+// Reads from a stream until it has n bytes, with readv into the vectors, appending what each read returns.
+static std::string win_io_readv_all(int fd, struct iovec* iov, int iov_size, size_t n)
+{
+    std::string got;
+    while (got.size() < n) {
+        ssize_t r = _st_win64_readv(fd, iov, iov_size);
+        if (r <= 0) break;
+        for (int i = 0; i < iov_size && r > 0; i++) {
+            size_t take = std::min((size_t)r, iov[i].iov_len);
+            got.append((char*)iov[i].iov_base, take);
+            r -= (ssize_t)take;
+        }
+    }
+    return got;
+}
+
+// st_netfd_open_socket makes a socket non-blocking with ioctl(FIONBIO), which is ioctlsocket on Windows: a read with
+// nothing queued then fails with EAGAIN at once, so st_read waits in the event system instead of blocking the thread.
+VOID TEST(WinIoTest, IoctlSetsNonBlocking)
+{
+    int fds[2];
+    ASSERT_TRUE(win_io_tcp_pair(fds));
+
+    int on = 1;
+    EXPECT_EQ(0, _st_win64_ioctl(fds[1], FIONBIO, &on));
+    char buf[8];
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_read(fds[1], buf, sizeof(buf)));
+    EXPECT_EQ(EAGAIN, errno);
+
+    // Data queued by the peer is read at once.
+    EXPECT_EQ(2, _st_win64_write(fds[0], "hi", 2));
+    ASSERT_TRUE(win_io_wait_readable(fds[1]));
+    EXPECT_EQ(2, _st_win64_read(fds[1], buf, sizeof(buf)));
+    EXPECT_EQ("hi", std::string(buf, 2));
+
+    EXPECT_EQ(0, _st_win64_close(fds[0]));
+    EXPECT_EQ(0, _st_win64_close(fds[1]));
+
+    // A closed socket is not a socket.
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_ioctl(fds[1], FIONBIO, &on));
+    EXPECT_EQ(ENOTSOCK, errno);
+}
+
+// st_netfd_open makes a descriptor non-blocking the POSIX way, fcntl(F_GETFL) then fcntl(F_SETFL, O_NONBLOCK). On
+// Windows, where only sockets are supported, F_SETFL sets the socket's non-blocking mode.
+VOID TEST(WinIoTest, FcntlSetsNonBlocking)
+{
+    int fds[2];
+    ASSERT_TRUE(win_io_tcp_pair(fds));
+
+    int flags = _st_win64_fcntl(fds[1], WIN_IO_F_GETFL, 0);
+    EXPECT_GE(flags, 0);
+    EXPECT_EQ(0, _st_win64_fcntl(fds[1], WIN_IO_F_SETFL, flags | WIN_IO_O_NONBLOCK));
+    char buf[8];
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_read(fds[1], buf, sizeof(buf)));
+    EXPECT_EQ(EAGAIN, errno);
+
+    // Another command is not supported.
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_fcntl(fds[1], 1, 0));
+    EXPECT_EQ(EINVAL, errno);
+
+    EXPECT_EQ(0, _st_win64_close(fds[0]));
+    EXPECT_EQ(0, _st_win64_close(fds[1]));
+
+    // Only sockets: a closed one fails.
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_fcntl(fds[1], WIN_IO_F_SETFL, WIN_IO_O_NONBLOCK));
+    EXPECT_EQ(ENOTSOCK, errno);
+}
+
+// read and write are recv and send on a socket: the bytes arrive in order, and a read after the peer closes returns 0,
+// the end of stream that st_read reports.
+VOID TEST(WinIoTest, ReadWriteStream)
+{
+    int fds[2];
+    ASSERT_TRUE(win_io_tcp_pair(fds));
+
+    EXPECT_EQ(5, _st_win64_write(fds[0], "hello", 5));
+    EXPECT_EQ(6, _st_win64_write(fds[0], " world", 6));
+
+    std::string got;
+    char buf[64];
+    while (got.size() < 11) {
+        ssize_t n = _st_win64_read(fds[1], buf, sizeof(buf));
+        ASSERT_GT(n, 0);
+        got.append(buf, (size_t)n);
+    }
+    EXPECT_EQ("hello world", got);
+
+    // An empty write sends nothing and succeeds.
+    EXPECT_EQ(0, _st_win64_write(fds[0], "", 0));
+
+    EXPECT_EQ(0, _st_win64_close(fds[0]));
+    EXPECT_EQ(0, _st_win64_read(fds[1], buf, sizeof(buf)));
+    EXPECT_EQ(0, _st_win64_close(fds[1]));
+}
+
+// A socket that is not connected fails with ENOTCONN, which st_read reports instead of waiting.
+VOID TEST(WinIoTest, ReadWriteNotConnected)
+{
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(INVALID_SOCKET, s);
+    int fd = (int)s;
+    char buf[8];
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_read(fd, buf, sizeof(buf)));
+    EXPECT_EQ(ENOTCONN, errno);
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_write(fd, "x", 1));
+    EXPECT_EQ(ENOTCONN, errno);
+    EXPECT_EQ(0, _st_win64_close(fd));
+}
+
+// writev gathers and readv scatters, like SRS sending an RTMP header and payload in one call. iovec is base then
+// length while WSABUF is length then base, so io.c copies each one; a cast would put the data in the wrong place.
+VOID TEST(WinIoTest, ReadvWritevStream)
+{
+    int fds[2];
+    ASSERT_TRUE(win_io_tcp_pair(fds));
+
+    char h[] = "head", p[] = "payload", t[] = "!";
+    struct iovec out[3] = {{h, 4}, {p, 7}, {t, 1}};
+    EXPECT_EQ(12, _st_win64_writev(fds[0], out, 3));
+
+    // The first buffer holds three bytes, the second the rest.
+    char a[3], b[32];
+    struct iovec in[2] = {{a, sizeof(a)}, {b, sizeof(b)}};
+    ASSERT_TRUE(win_io_wait_readable(fds[1]));
+    EXPECT_EQ("headpayload!", win_io_readv_all(fds[1], in, 2, 12));
+
+    // No vectors: nothing to do, and no error.
+    EXPECT_EQ(0, _st_win64_readv(fds[1], in, 0));
+    EXPECT_EQ(0, _st_win64_writev(fds[0], out, 0));
+
+    EXPECT_EQ(0, _st_win64_close(fds[0]));
+    EXPECT_EQ(0, _st_win64_close(fds[1]));
+}
+
+// More vectors than io.c keeps on its stack, as when SRS sends many small frames in one writev: all are sent, in order.
+VOID TEST(WinIoTest, ReadvWritevManyVectors)
+{
+    int fds[2];
+    ASSERT_TRUE(win_io_tcp_pair(fds));
+
+    const int count = 100;
+    std::vector<std::string> parts;
+    std::string want;
+    for (int i = 0; i < count; i++) {
+        parts.push_back(std::string((size_t)(i % 7 + 1), (char)('a' + i % 26)));
+        want += parts.back();
+    }
+    std::vector<struct iovec> out(count);
+    for (int i = 0; i < count; i++) {
+        out[i].iov_base = (void*)parts[i].data();
+        out[i].iov_len = parts[i].size();
+    }
+    EXPECT_EQ((ssize_t)want.size(), _st_win64_writev(fds[0], &out[0], count));
+
+    // Read back into one-byte vectors, also more than the stack holds.
+    std::vector<char> bytes(want.size());
+    std::vector<struct iovec> in(want.size());
+    for (size_t i = 0; i < want.size(); i++) {
+        in[i].iov_base = &bytes[i];
+        in[i].iov_len = 1;
+    }
+    size_t done = 0;
+    while (done < want.size()) {
+        ssize_t n = _st_win64_readv(fds[1], &in[done], (int)(want.size() - done));
+        ASSERT_GT(n, 0);
+        done += (size_t)n;
+    }
+    EXPECT_EQ(want, std::string(bytes.begin(), bytes.end()));
+
+    EXPECT_EQ(0, _st_win64_close(fds[0]));
+    EXPECT_EQ(0, _st_win64_close(fds[1]));
+}
+
+// sendmsg gathers a header and a payload into one datagram to msg_name, as SRS sends RTP; recvmsg scatters it and
+// reports the sender in msg_name, like recvfrom.
+VOID TEST(WinIoTest, SendmsgRecvmsgDatagram)
+{
+    int server, player;
+    sockaddr_in server_addr, player_addr;
+    ASSERT_TRUE(win_io_udp_socket(server, server_addr));
+    ASSERT_TRUE(win_io_udp_socket(player, player_addr));
+
+    char h[12], p[100];
+    memset(h, 'h', sizeof(h));
+    memset(p, 'p', sizeof(p));
+    struct iovec out[2] = {{h, sizeof(h)}, {p, sizeof(p)}};
+    struct msghdr sent;
+    memset(&sent, 0, sizeof(sent));
+    sent.msg_name = &server_addr;
+    sent.msg_namelen = sizeof(server_addr);
+    sent.msg_iov = out;
+    sent.msg_iovlen = 2;
+    EXPECT_EQ(112, _st_win64_sendmsg(player, &sent, 0));
+
+    char rh[12], rp[200];
+    struct iovec in[2] = {{rh, sizeof(rh)}, {rp, sizeof(rp)}};
+    sockaddr_in from;
+    memset(&from, 0, sizeof(from));
+    struct msghdr received;
+    memset(&received, 0, sizeof(received));
+    received.msg_name = &from;
+    received.msg_namelen = sizeof(from);
+    received.msg_iov = in;
+    received.msg_iovlen = 2;
+    ASSERT_TRUE(win_io_wait_readable(server));
+    EXPECT_EQ(112, _st_win64_recvmsg(server, &received, 0));
+    EXPECT_EQ(std::string(12, 'h'), std::string(rh, 12));
+    EXPECT_EQ(std::string(100, 'p'), std::string(rp, 100));
+    EXPECT_EQ((socklen_t)sizeof(from), received.msg_namelen);
+    EXPECT_EQ(player_addr.sin_port, from.sin_port);
+    EXPECT_EQ(htonl(INADDR_LOOPBACK), from.sin_addr.s_addr);
+    EXPECT_EQ(0, received.msg_flags & MSG_TRUNC);
+
+    EXPECT_EQ(0, _st_win64_close(server));
+    EXPECT_EQ(0, _st_win64_close(player));
+}
+
+// recvmsg passes its flags: MSG_PEEK leaves the datagram queued for the next read.
+VOID TEST(WinIoTest, RecvmsgPeekKeepsDatagram)
+{
+    int server, player;
+    sockaddr_in server_addr, player_addr;
+    ASSERT_TRUE(win_io_udp_socket(server, server_addr));
+    ASSERT_TRUE(win_io_udp_socket(player, player_addr));
+    EXPECT_EQ(5, ::sendto((SOCKET)player, "hello", 5, 0, (sockaddr*)&server_addr, sizeof(server_addr)));
+
+    char first = 0;
+    struct iovec iov = {&first, 1};
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    ASSERT_TRUE(win_io_wait_readable(server));
+    EXPECT_EQ(1, _st_win64_recvmsg(server, &msg, MSG_PEEK));
+    EXPECT_EQ('h', first);
+
+    // Non-blocking, so a peek that dropped the datagram fails here instead of hanging.
+    int on = 1;
+    EXPECT_EQ(0, _st_win64_ioctl(server, FIONBIO, &on));
+    char buf[64] = {0};
+    iov.iov_base = buf;
+    iov.iov_len = sizeof(buf);
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    EXPECT_EQ(5, _st_win64_recvmsg(server, &msg, 0));
+    EXPECT_STREQ("hello", buf);
+
+    EXPECT_EQ(0, _st_win64_close(server));
+    EXPECT_EQ(0, _st_win64_close(player));
+}
+
+// A datagram larger than the buffers is truncated as on POSIX, where Winsock fails with WSAEMSGSIZE: recvmsg returns
+// the bytes that fit and sets MSG_TRUNC, and recvfrom and read return the bytes that fit. The rest is dropped, and the
+// next read gets the next datagram.
+VOID TEST(WinIoTest, TruncatedDatagramReturnsWhatFits)
+{
+    int server, player;
+    sockaddr_in server_addr, player_addr;
+    ASSERT_TRUE(win_io_udp_socket(server, server_addr));
+    ASSERT_TRUE(win_io_udp_socket(player, player_addr));
+
+    std::string large(1500, 'x');
+    for (int i = 0; i < 4; i++) {
+        EXPECT_EQ(1500, ::sendto((SOCKET)player, large.data(), 1500, 0, (sockaddr*)&server_addr, sizeof(server_addr)));
+    }
+    EXPECT_EQ(4, ::sendto((SOCKET)player, "next", 4, 0, (sockaddr*)&server_addr, sizeof(server_addr)));
+    ASSERT_TRUE(win_io_wait_readable(server));
+
+    char buf[100];
+    struct iovec iov = {buf, sizeof(buf)};
+    sockaddr_in from;
+    memset(&from, 0, sizeof(from));
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = &from;
+    msg.msg_namelen = sizeof(from);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    EXPECT_EQ(100, _st_win64_recvmsg(server, &msg, 0));
+    EXPECT_TRUE((msg.msg_flags & MSG_TRUNC) != 0);
+    EXPECT_EQ(std::string(100, 'x'), std::string(buf, 100));
+    EXPECT_EQ(player_addr.sin_port, from.sin_port);
+
+    memset(&from, 0, sizeof(from));
+    socklen_t fromlen = sizeof(from);
+    EXPECT_EQ(100, _st_win64_recvfrom(server, buf, sizeof(buf), 0, (sockaddr*)&from, &fromlen));
+    EXPECT_EQ(player_addr.sin_port, from.sin_port);
+
+    EXPECT_EQ(100, _st_win64_read(server, buf, sizeof(buf)));
+
+    char a[10], b[20];
+    struct iovec two[2] = {{a, sizeof(a)}, {b, sizeof(b)}};
+    EXPECT_EQ(30, _st_win64_readv(server, two, 2));
+
+    memset(buf, 0, sizeof(buf));
+    EXPECT_EQ(4, _st_win64_read(server, buf, sizeof(buf)));
+    EXPECT_STREQ("next", buf);
+
+    EXPECT_EQ(0, _st_win64_close(server));
+    EXPECT_EQ(0, _st_win64_close(player));
+}
+
+// A datagram larger than UDP allows fails at once with EMSGSIZE, which st_sendmsg reports instead of waiting.
+VOID TEST(WinIoTest, SendmsgOversizedDatagramFails)
+{
+    int server, player;
+    sockaddr_in server_addr, player_addr;
+    ASSERT_TRUE(win_io_udp_socket(server, server_addr));
+    ASSERT_TRUE(win_io_udp_socket(player, player_addr));
+
+    std::string half(32768, 'x');
+    struct iovec iov[2] = {{(void*)half.data(), half.size()}, {(void*)half.data(), half.size()}};
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = &server_addr;
+    msg.msg_namelen = sizeof(server_addr);
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 2;
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_sendmsg(player, &msg, 0));
+    EXPECT_EQ(EMSGSIZE, errno);
+
+    EXPECT_EQ(0, _st_win64_close(server));
+    EXPECT_EQ(0, _st_win64_close(player));
+}
+
+// On POSIX, sendmsg and recvmsg work on a TCP stream too, and st_sendmsg is used that way, while Winsock's WSASendMsg
+// and WSARecvMsg may take only datagrams, so a stream works the same through io.c.
+VOID TEST(WinIoTest, SendmsgRecvmsgStream)
+{
+    int fds[2];
+    ASSERT_TRUE(win_io_tcp_pair(fds));
+
+    char h[] = "head", p[] = "payload";
+    struct iovec out[2] = {{h, 4}, {p, 7}};
+    struct msghdr sent;
+    memset(&sent, 0, sizeof(sent));
+    sent.msg_iov = out;
+    sent.msg_iovlen = 2;
+    EXPECT_EQ(11, _st_win64_sendmsg(fds[0], &sent, 0));
+
+    char buf[64];
+    std::string got;
+    while (got.size() < 11) {
+        struct iovec in = {buf, sizeof(buf)};
+        struct msghdr received;
+        memset(&received, 0, sizeof(received));
+        received.msg_iov = &in;
+        received.msg_iovlen = 1;
+        int n = _st_win64_recvmsg(fds[1], &received, 0);
+        ASSERT_GT(n, 0);
+        got.append(buf, (size_t)n);
+        EXPECT_EQ(0, received.msg_flags);
+    }
+    EXPECT_EQ("headpayload", got);
+
+    // The end of stream is 0.
+    EXPECT_EQ(0, _st_win64_close(fds[0]));
+    struct iovec in = {buf, sizeof(buf)};
+    struct msghdr received;
+    memset(&received, 0, sizeof(received));
+    received.msg_iov = &in;
+    received.msg_iovlen = 1;
+    EXPECT_EQ(0, _st_win64_recvmsg(fds[1], &received, 0));
+    EXPECT_EQ(0, _st_win64_close(fds[1]));
+}
+
+// close is closesocket, which st_netfd_close calls: the socket is gone afterwards, and closing it again fails.
+VOID TEST(WinIoTest, CloseClosesSocket)
+{
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(INVALID_SOCKET, s);
+    int fd = (int)s;
+    EXPECT_EQ(0, _st_win64_close(fd));
+
+    int type = 0;
+    int size = sizeof(type);
+    EXPECT_EQ(SOCKET_ERROR, ::getsockopt(s, SOL_SOCKET, SO_TYPE, (char*)&type, &size));
+    EXPECT_EQ(WSAENOTSOCK, WSAGetLastError());
+
+    errno = 0;
+    EXPECT_EQ(-1, _st_win64_close(fd));
+    EXPECT_EQ(ENOTSOCK, errno);
+}
+#endif

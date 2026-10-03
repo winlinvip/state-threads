@@ -6,20 +6,26 @@
 #include <st.h>
 #include <errno.h>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <pthread.h>
+#endif
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <vector>
 
+#ifndef _WIN32
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 
 #define ST_UTIME_MILLISECONDS 1000
 #define ST_UTEST_TIMEOUT (100 * ST_UTIME_MILLISECONDS)
@@ -31,6 +37,7 @@
 // on descriptors already in it.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifndef _WIN32 // POSIX only: pipes at chosen descriptor numbers
 // A pipe whose read end is moved to a chosen descriptor number, and whose write end stays plain.
 struct EventTestHighPipe {
     int reader_;
@@ -68,6 +75,7 @@ static bool event_test_high_pipe(EventTestHighPipe& p, int fd)
     p.reader_ = fd;
     return true;
 }
+#endif
 
 struct EventTestReader {
     st_netfd_t stfd_;
@@ -89,6 +97,7 @@ static void* event_test_reader_coroutine(void* arg)
     return NULL;
 }
 
+#ifndef _WIN32 // POSIX only: pipes at chosen descriptor numbers
 // The server already holds more descriptors than the initial table, so the next connection gets descriptor 5000.
 // st_netfd_open grows the table for it, a coroutine reading it waits and wakes on its data, and the descriptor then
 // closes, since no waiter is left counted on it. Locks in current behavior.
@@ -160,6 +169,7 @@ VOID TEST(HighFdTest, WaiterKeepsWaitingWhenTableGrows)
     EXPECT_EQ(0, st_netfd_close(r.stfd_));
     ::close(fds[1]);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // The utest for a pollset the event system refuses part of, such as a tool that waits with st_poll on its server
@@ -168,6 +178,7 @@ VOID TEST(HighFdTest, WaiterKeepsWaitingWhenTableGrows)
 // at once and leaves every descriptor as it was. kqueue accepts a regular file and reports it ready.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifndef _WIN32 // POSIX only: regular files and pipes
 // A regular file holding one command, read from the start, like stdin redirected from a file.
 static int event_test_command_file()
 {
@@ -324,6 +335,7 @@ VOID TEST(PollRefusedTest, ReaderOnSameConnectionKeepsWaiting)
     ::close(fds[1]);
     ::close(file);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // The utest for waiting for TCP urgent data with POLLPRI, such as an FTP server whose client aborts a transfer, or a
@@ -527,6 +539,7 @@ VOID TEST(PollPriTest, ReaderAndAbortWaiterShareConnection)
 // list for a large pollset in the same way.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifndef _WIN32 // POSIX only: dup of a pipe
 // A server waits on 4097 connections in one st_poll, one more than the initial result list, and data arrives on all of
 // them at once. Each connection is a dup of one pipe's read end, so one byte makes them all readable. st_poll reports
 // every connection ready, and the descriptors then close. Locks in current behavior.
@@ -560,6 +573,7 @@ VOID TEST(ManyWaitsTest, EveryReadyConnectionReported)
     ::close(fds[0]);
     ::close(fds[1]);
 }
+#endif
 
 #if defined(__linux__)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

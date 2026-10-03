@@ -6,23 +6,33 @@
 #include <st.h>
 #include <errno.h>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <poll.h>
 #include <pthread.h>
+#endif
 #include <signal.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <string.h>
 #include <string>
 #include <vector>
 #include <algorithm>
 
+#ifndef _WIN32
 #include <sys/socket.h>
+#endif
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <sys/uio.h>
 #include <sys/resource.h>
 #include <sys/un.h>
+#endif
 #include <stddef.h>
+#ifndef _WIN32
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 
 #define ST_UTIME_MILLISECONDS 1000
 #define ST_UTEST_TIMEOUT (100 * ST_UTIME_MILLISECONDS)
@@ -481,6 +491,7 @@ VOID TEST(IoReadTest, ReadOnResetConnectionFails)
     }
 }
 
+#ifndef _WIN32 // POSIX only: signals, fcntl and pthread
 static volatile sig_atomic_t io_read_signals = 0;
 
 static void io_read_on_signal(int signo)
@@ -657,6 +668,7 @@ VOID TEST(IoReadTest, ReadvResidRetriesWhenSignalInterruptsSystemCall)
     EXPECT_STREQ("hdr", header);
     EXPECT_STREQ("payload", payload);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // The utest for accepting and connecting TCP, the way an SRS listener accepts clients and an SRS edge or forwarder
@@ -712,6 +724,7 @@ static void* io_connect_coroutine(void* arg)
     return NULL;
 }
 
+#ifndef _WIN32 // POSIX only: fcntl O_NONBLOCK
 // An SRS listener waits for clients with no timeout. A client connects later: st_accept wakes, reports the client's
 // address, and returns a non-blocking socket that is ready for ST I/O, whether or not the OS lets an accepted socket
 // inherit O_NONBLOCK from the listener. On the client side, st_connect waits for the handshake and succeeds. Locks in
@@ -757,6 +770,7 @@ VOID TEST(IoAcceptTest, AcceptWaitsForClient)
     EXPECT_EQ(5, st_read_fully(client, buf, 5, ST_UTEST_TIMEOUT));
     EXPECT_STREQ("hello", buf);
 }
+#endif
 
 // No client arrives before the timeout, so st_accept fails with ETIME. Locks in current behavior.
 VOID TEST(IoAcceptTest, AcceptTimesOut)
@@ -824,6 +838,7 @@ VOID TEST(IoAcceptTest, AcceptOnSocketNotListeningFails)
     EXPECT_EQ(EINVAL, errno);
 }
 
+#ifndef _WIN32 // POSIX only: signals, fcntl and pthread
 // Another thread of the program signals the accepting thread a few times, then a client connects.
 struct IoTestAcceptSignaler {
     pthread_t target_;
@@ -900,6 +915,7 @@ VOID TEST(IoAcceptTest, AcceptRetriesWhenSignalInterruptsSystemCall)
     EXPECT_EQ(5, st_read_fully(client, buf, 5, ST_UTEST_TIMEOUT));
     EXPECT_STREQ("hello", buf);
 }
+#endif
 
 // Open a TCP socket for st_connect.
 static st_netfd_t io_tcp_socket(int family)
@@ -1297,6 +1313,7 @@ VOID TEST(IoWriteTest, WritevInterruptedWhenConnectionStops)
     EXPECT_EQ(EINTR, w.errno_);
 }
 
+#ifndef _WIN32 // POSIX only: signals and pthread
 // Another thread of the program signals the writing thread a few times, then reads everything as the player.
 struct IoTestWriteSignaler {
     pthread_t target_;
@@ -1327,6 +1344,7 @@ static void* io_write_signaler_thread(void* arg)
     }
     return NULL;
 }
+#endif
 
 // Write to the non-blocking socket until the send buffer and the player's receive buffer are full and the kernel takes
 // no more, and keep what was written. The kernel moves the send buffer to the player in the background, so the first
@@ -1355,6 +1373,7 @@ static bool io_fill_buffers(int fd, std::string& filled)
     }
 }
 
+#ifndef _WIN32 // POSIX only: signals, fcntl and pthread
 // A signal interrupts writev while it waits in the kernel for a stalled player, and the handler was installed without
 // SA_RESTART, so writev fails with EINTR. st_writev retries it instead of failing, because only st_thread_interrupt
 // means the writer should stop, and every byte arrives once the player reads. A blocking writev fails with EINTR only
@@ -1557,6 +1576,7 @@ VOID TEST(IoWriteTest, SendmsgRetriesWhenSignalInterruptsSystemCall)
     EXPECT_TRUE(s.received_.substr(0, filled.size()) == filled);
     EXPECT_TRUE(s.received_.substr(filled.size()) == msgs.data_);
 }
+#endif
 
 // st_writev_resid keeps the count that st_writev loses. When the stalled player makes it time out, the caller's iovec
 // array points at what is still unsent: the rest of a partly sent buffer, then the untouched ones. When the player
@@ -1688,6 +1708,7 @@ VOID TEST(IoWriteTest, WriteFailsWhenPlayerResetsMidStream)
 // SRS uses to turn a signal into an event for a coroutine.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifndef _WIN32 // POSIX only: pipes
 // A pipe whose read end is wrapped with st_netfd_open, the way SRS wraps its signal pipe. The write end stays a plain
 // descriptor, like the one a signal handler writes to.
 struct IoTestPipe {
@@ -1713,6 +1734,7 @@ static bool io_pipe(IoTestPipe& p)
     }
     return true;
 }
+#endif
 
 struct IoTestSignalReader {
     st_netfd_t stfd_;
@@ -1730,6 +1752,7 @@ static void* io_signal_reader_coroutine(void* arg)
     return NULL;
 }
 
+#ifndef _WIN32 // POSIX only: pipes and fcntl
 // SRS turns signals into events with a pipe: the handler writes the signal number to the write end, and a coroutine
 // waits on the read end, wrapped with st_netfd_open. A pipe is not a socket, so ST makes it non-blocking with fcntl,
 // and the coroutine waits instead of blocking the whole process. Locks in current behavior.
@@ -1757,6 +1780,7 @@ VOID TEST(IoNetfdTest, SignalPipeWakesWaitingCoroutine)
     EXPECT_EQ((ssize_t)sizeof(signo), r.nread_);
     EXPECT_EQ(SIGHUP, r.signo_);
 }
+#endif
 
 // Closing a descriptor while another coroutine still waits on it fails with EBUSY, and leaves the descriptor open and
 // the waiter undisturbed, so the event system never holds a stale descriptor. SRS treats this as a bug and asserts
@@ -1880,6 +1904,7 @@ VOID TEST(IoNetfdTest, DescriptorDataIsFreedWhenReplacedOrClosed)
     EXPECT_EQ("second", _io_freed_specifics[1]);
 }
 
+#ifndef _WIN32 // POSIX only: getrlimit
 // st_init raises the soft limit of open descriptors as far as it may, so a server can hold many connections, and
 // st_getfdlimit reports that limit. On Linux the soft limit becomes the hard limit. On macOS an unlimited hard limit
 // reads as negative, so ST keeps the soft limit. Locks in current behavior.
@@ -1894,6 +1919,7 @@ VOID TEST(IoNetfdTest, FdLimitIsRaisedAtInit)
     EXPECT_EQ(rlim.rlim_max, rlim.rlim_cur);
 #endif
 }
+#endif
 
 // The original ST serialized accept across processes; this fork dropped that, so st_netfd_serialize_accept is a no-op
 // kept for source compatibility. It succeeds and the listener accepts as before. Locks in current behavior.
@@ -1915,6 +1941,7 @@ VOID TEST(IoNetfdTest, SerializeAcceptIsNoOp)
     EXPECT_EQ(0, st_netfd_close(listener));
 }
 
+#ifndef _WIN32 // POSIX only: FIFOs and regular files with st_open
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // The utest for st_open: a FIFO or another special file opened non-blocking, so a coroutine waits on it like on a
 // socket. For example, a server that takes commands from a named pipe, or reads a stream another program writes into
@@ -2171,3 +2198,4 @@ VOID TEST(IoOpenTest, RegularFileNeverWaits)
     EXPECT_EQ(0, st_read(fd, buf, sizeof(buf), ST_UTEST_TIMEOUT));
     EXPECT_LT(st_utime() - starttime, ST_UTEST_TIMEOUT);
 }
+#endif

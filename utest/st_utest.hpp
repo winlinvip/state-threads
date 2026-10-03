@@ -15,15 +15,80 @@
 #include <memory>
 
 #include <errno.h>
+#ifndef _WIN32
 #include <unistd.h>
 #include <sys/socket.h>
+#endif
 
+#ifdef _WIN32
+// winnt.h defines VOID as void, which the tests use as an empty prefix.
+#undef VOID
+// For the tests that declare ST's thread-local variables, as md.h maps it for WIN64.
+#define __thread __declspec(thread)
+// MSVC has no frame address builtin; the slot of the return address is in the caller's frame, next to it.
+#include <intrin.h>
+#define __builtin_frame_address(level) _AddressOfReturnAddress()
+static inline int getpagesize()
+{
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return (int)si.dwPageSize;
+}
+// Sleeps the OS thread, rounded up to milliseconds.
+static inline int usleep(unsigned int us)
+{
+    Sleep((us + 999) / 1000);
+    return 0;
+}
+#endif
 #define VOID
 
 // Portable descriptors. A test that only needs a connection ST can wait on uses these, not a pipe or read and write,
 // so it runs unchanged where only sockets can be polled, such as Windows. A test about a POSIX feature itself, such as
 // a pipe, a signal or a chosen descriptor number, keeps the POSIX calls.
 
+#ifdef _WIN32
+// Native Windows (winsock comes from st.h) has no socketpair, so the pair is a stub that fails until a loopback TCP
+// pair replaces it. Descriptors are winsock sockets that fit in an int.
+static inline int st_utest_stream_pair(int fds[2])
+{
+    fds[0] = fds[1] = -1;
+    errno = ENOSYS;
+    return -1;
+}
+
+// Winsock takes the option value as char*, so these overloads let tests pass any pointer as on POSIX.
+static inline int setsockopt(int fd, int level, int name, const void* value, socklen_t size)
+{
+    return ::setsockopt((SOCKET)fd, level, name, (const char*)value, size);
+}
+
+static inline int getsockopt(int fd, int level, int name, void* value, socklen_t* size)
+{
+    return ::getsockopt((SOCKET)fd, level, name, (char*)value, size);
+}
+
+static inline ssize_t st_utest_send(int fd, const void* buf, size_t size)
+{
+    return ::send((SOCKET)fd, (const char*)buf, (int)size, 0);
+}
+
+static inline ssize_t st_utest_recv(int fd, void* buf, size_t size)
+{
+    return ::recv((SOCKET)fd, (char*)buf, (int)size, 0);
+}
+
+static inline int st_utest_close(int fd)
+{
+    return ::closesocket((SOCKET)fd);
+}
+
+// Whether the last send or recv failed because the socket wasn't ready.
+static inline bool st_utest_would_block()
+{
+    return ::WSAGetLastError() == WSAEWOULDBLOCK;
+}
+#else
 // Two connected stream sockets. Returns 0, or -1 with errno set.
 static inline int st_utest_stream_pair(int fds[2])
 {
@@ -50,6 +115,7 @@ static inline bool st_utest_would_block()
 {
     return errno == EAGAIN || errno == EWOULDBLOCK;
 }
+#endif
 
 // A connection whose one end ST waits on, wrapped with st_netfd_open_socket, and whose other end, the peer, the test
 // reads and writes directly.

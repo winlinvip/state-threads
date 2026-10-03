@@ -39,6 +39,47 @@
 #ifndef __ST_THREAD_H__
 #define __ST_THREAD_H__
 
+#if defined(_WIN32) || defined(_MSC_VER)
+/*
+ * Native Windows (MSVC). Detected by compiler macros, because programs that
+ * include st.h do not define WIN64. Cygwin GCC defines neither macro.
+ * Provide the POSIX names used by this API, so callers compile unchanged.
+ * Include st.h before windows.h, or define WIN32_LEAN_AND_MEAN.
+ */
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/types.h>
+#include <time.h>
+#include <errno.h>
+
+#ifndef _SSIZE_T_DEFINED
+#define _SSIZE_T_DEFINED
+typedef intptr_t ssize_t;
+#endif
+
+#ifndef _MODE_T_DEFINED
+#define _MODE_T_DEFINED
+typedef int mode_t;
+#endif
+
+/* Same field names and order as POSIX; not the same layout as WSABUF. */
+struct iovec {
+    void *iov_base;
+    size_t iov_len;
+};
+
+struct msghdr {
+    void *msg_name;
+    socklen_t msg_namelen;
+    struct iovec *msg_iov;
+    int msg_iovlen;
+    void *msg_control;
+    socklen_t msg_controllen;
+    int msg_flags;
+};
+#else
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -46,6 +87,7 @@
 #include <time.h>
 #include <errno.h>
 #include <poll.h>
+#endif
 
 #define ST_VERSION	    "1.9.0"
 #define ST_VERSION_MAJOR    1

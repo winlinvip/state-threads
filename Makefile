@@ -33,7 +33,7 @@
 # GPL.
 
 # This is the full version of the libst library - modify carefully
-VERSION     = 1.9.1
+VERSION     = 1.9.2
 
 ##########################
 # Supported OSes:
@@ -273,7 +273,7 @@ endif
 ifeq ($(OS),)
 ST_ALL      = unknown
 else
-ST_ALL      = $(TARGETDIR) $(LIBRARIES) $(HEADER) $(DESC)
+ST_ALL      = $(TARGETDIR) $(LIBRARIES) $(HEADER) $(DESC) obj-link
 endif
 
 all: $(ST_ALL)
@@ -290,13 +290,17 @@ unknown:
 st.pc:	st.pc.in
 	sed "s/@VERSION@/${VERSION}/g" < $< > $@
 
+# Point obj to this platform on every build, even when the library is up to date.
+.PHONY: obj-link
+obj-link:
+	rm -f obj; $(LINK_OBJ)
+
 $(TARGETDIR):
 	if [ ! -d $(TARGETDIR) ]; then mkdir $(TARGETDIR); fi
 
 $(SLIBRARY): $(OBJS)
 	$(AR) $(ARFLAGS) $(AR_OUT)$@ $(OBJS)
 	$(RANLIB) $@
-	rm -f obj; $(LINK_OBJ)
 
 $(DLIBRARY): $(OBJS:%.o=%-pic.o)
 	$(LD) $(LDFLAGS) $^ -o $@

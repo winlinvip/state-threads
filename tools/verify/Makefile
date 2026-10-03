@@ -32,7 +32,7 @@ CLEAN_FILES += verify.exe verify.obj verify.ilk verify.pdb
 endif
 
 ./verify$(EXE):  verify.c $(LDLIBS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(WARNFLAGS) $(LINK_OUT)$@ $^ $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(WARNFLAGS) $(LINK_OUT)$@ $< $(LDLIBS)
 
 clean:
 	cd ../.. && make clean

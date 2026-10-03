@@ -209,7 +209,7 @@ cmake --build C:\st-build --config Debug --target st_utest
 ```
 
 > Note: Use a short build directory, because MSBuild fails when its paths are too long. The Makefile stays the
-> main build, and CMake also builds the `helloworld`, `jmpbuf`, `porting`, and `verify` tools.
+> main build, and CMake also builds the `helloworld`, `porting`, and `verify` tools.
 
 ## Linux: Coverage
 

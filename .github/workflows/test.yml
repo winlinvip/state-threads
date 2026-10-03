@@ -23,6 +23,15 @@ jobs:
       # Tests
       - name: Run ST utest
         run: make ${{ matrix.target }} && ./obj/st_utest
+      - name: Run ST tools
+        run: ./auto/tools.sh
+      - name: Run ST tools in the SRS build
+        run: EXTRA_CFLAGS=-DMALLOC_STACK ./auto/tools.sh
+      - name: Run ST tools with ASAN
+        if: matrix.name == 'linux-x64'
+        run: |
+          EXTRA_CFLAGS="-DMALLOC_STACK -DMD_ASAN -fsanitize=address -fno-omit-frame-pointer" \
+              LDFLAGS=-fsanitize=address ./auto/tools.sh
 
   coverage:
     name: actions-test-coverage

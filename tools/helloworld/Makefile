@@ -32,7 +32,7 @@ CLEAN_FILES += helloworld.exe helloworld.obj helloworld.ilk helloworld.pdb
 endif
 
 ./helloworld$(EXE): helloworld.c $(LDLIBS)
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(WARNFLAGS) $(LINK_OUT)$@ $^ $(LDLIBS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(WARNFLAGS) $(LINK_OUT)$@ $< $(LDLIBS)
 
 clean:
 	cd ../.. && make clean

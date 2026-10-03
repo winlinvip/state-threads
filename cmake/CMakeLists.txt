@@ -57,8 +57,8 @@ if (MSVC)
     TARGET_LINK_LIBRARIES(st_utest gtest gtest_main ws2_32)
     set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT st_utest)
 
-    # The tools ported to MSVC; backtrace, pcs, and stack are POSIX only.
-    foreach (TOOL helloworld jmpbuf porting verify)
+    # The tools ported to MSVC so far.
+    foreach (TOOL helloworld porting verify)
         set(ST_TOOL_SOURCE_FILES ${SOURCE_FILES})
         AUX_SOURCE_DIRECTORY(${ST_DIR}/tools/${TOOL} ST_TOOL_SOURCE_FILES)
         ADD_EXECUTABLE(st_${TOOL} ${ST_TOOL_SOURCE_FILES})

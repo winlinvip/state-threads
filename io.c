@@ -66,6 +66,100 @@
  */
 #pragma comment(lib, "ws2_32.lib")
 
+/*
+ * Map a Winsock error to errno, which ST and its callers such as SRS check. For
+ * connect (connecting is set), WSAEWOULDBLOCK means EINPROGRESS. An error with no
+ * equivalent is EIO; WSAGetLastError() still has the Winsock error.
+ */
+int _st_win64_errno(int wsaerr, int connecting)
+{
+    switch (wsaerr) {
+    case 0:                     return 0;
+    case WSAEWOULDBLOCK:        return connecting ? EINPROGRESS : EAGAIN;
+    case WSAEINPROGRESS:        return EINPROGRESS;
+    case WSAEALREADY:           return EALREADY;
+    case WSAEINTR:              return EINTR;
+    case WSAETIMEDOUT:          return ETIMEDOUT;
+    case WSAEBADF:              return EBADF;
+    case WSAEACCES:             return EACCES;
+    case WSAEFAULT:             return EFAULT;
+    case WSAEINVAL:             return EINVAL;
+    case WSAEMFILE:             return EMFILE;
+    case WSAENOTSOCK:           return ENOTSOCK;
+    case WSAEDESTADDRREQ:       return EDESTADDRREQ;
+    case WSAEMSGSIZE:           return EMSGSIZE;
+    case WSAEPROTOTYPE:         return EPROTOTYPE;
+    case WSAENOPROTOOPT:        return ENOPROTOOPT;
+    case WSAEPROTONOSUPPORT:    return EPROTONOSUPPORT;
+    case WSAESOCKTNOSUPPORT:    return EPROTONOSUPPORT;
+    case WSAEOPNOTSUPP:         return EOPNOTSUPP;
+    case WSAEPFNOSUPPORT:       return EAFNOSUPPORT;
+    case WSAEAFNOSUPPORT:       return EAFNOSUPPORT;
+    case WSAEADDRINUSE:         return EADDRINUSE;
+    case WSAEADDRNOTAVAIL:      return EADDRNOTAVAIL;
+    case WSAENETDOWN:           return ENETDOWN;
+    case WSAENETUNREACH:        return ENETUNREACH;
+    case WSAENETRESET:          return ENETRESET;
+    case WSAECONNABORTED:       return ECONNABORTED;
+    case WSAECONNRESET:         return ECONNRESET;
+    case WSAENOBUFS:            return ENOBUFS;
+    case WSAEISCONN:            return EISCONN;
+    case WSAENOTCONN:           return ENOTCONN;
+    case WSAESHUTDOWN:          return EPIPE;
+    case WSAECONNREFUSED:       return ECONNREFUSED;
+    case WSAELOOP:              return ELOOP;
+    case WSAENAMETOOLONG:       return ENAMETOOLONG;
+    case WSAEHOSTDOWN:          return EHOSTUNREACH;
+    case WSAEHOSTUNREACH:       return EHOSTUNREACH;
+    case WSAENOTEMPTY:          return ENOTEMPTY;
+    case WSA_INVALID_HANDLE:    return EBADF;
+    case WSA_NOT_ENOUGH_MEMORY: return ENOMEM;
+    case WSA_INVALID_PARAMETER: return EINVAL;
+    case WSA_OPERATION_ABORTED: return ECANCELED;
+    case WSANOTINITIALISED:     return EINVAL;
+    default:                    return EIO;
+    }
+}
+
+/* Set errno from the Winsock error of the failed call, and return -1. */
+static int _st_win64_sock_fail(int connecting)
+{
+    errno = _st_win64_errno(WSAGetLastError(), connecting);
+    return -1;
+}
+
+/*
+ * The Winsock calls ST makes, with errno set on failure. A SOCKET fits in an int
+ * (only 32 bits are significant), so it is truncated and sign-extended back.
+ */
+static int _st_win64_accept(int fd, struct sockaddr *addr, socklen_t *addrlen)
+{
+    SOCKET s = accept((SOCKET)fd, addr, addrlen);
+    return (s == INVALID_SOCKET) ? _st_win64_sock_fail(0) : (int)s;
+}
+
+static int _st_win64_connect(int fd, const struct sockaddr *addr, int addrlen)
+{
+    return (connect((SOCKET)fd, addr, addrlen) == SOCKET_ERROR) ? _st_win64_sock_fail(1) : 0;
+}
+
+static int _st_win64_getsockopt(int fd, int level, int name, char *value, socklen_t *size)
+{
+    return (getsockopt((SOCKET)fd, level, name, value, size) == SOCKET_ERROR) ? _st_win64_sock_fail(0) : 0;
+}
+
+static int _st_win64_recvfrom(int fd, void *buf, int len, int flags, struct sockaddr *from, socklen_t *fromlen)
+{
+    int n = recvfrom((SOCKET)fd, (char *)buf, len, flags, from, fromlen);
+    return (n == SOCKET_ERROR) ? _st_win64_sock_fail(0) : n;
+}
+
+static int _st_win64_sendto(int fd, const void *msg, int len, int flags, const struct sockaddr *to, int tolen)
+{
+    int n = sendto((SOCKET)fd, (const char *)msg, len, flags, to, tolen);
+    return (n == SOCKET_ERROR) ? _st_win64_sock_fail(0) : n;
+}
+
 /* Only for the fcntl stub; the CRT has no such flags. */
 #define F_GETFL     3
 #define F_SETFL     4
@@ -140,6 +234,11 @@ static int _st_win64_sendmsg(int fd, const struct msghdr *msg, int flags)
 #define writev      _st_win64_writev
 #define recvmsg     _st_win64_recvmsg
 #define sendmsg     _st_win64_sendmsg
+#define accept      _st_win64_accept
+#define connect     _st_win64_connect
+#define getsockopt  _st_win64_getsockopt
+#define recvfrom    _st_win64_recvfrom
+#define sendto      _st_win64_sendto
 #endif
 
 // Global stat.

@@ -332,6 +332,9 @@ void _st_del_sleep_q(_st_thread_t *thread);
 _st_stack_t *_st_stack_new(int stack_size);
 void _st_stack_free(_st_stack_t *ts);
 int _st_io_init(void);
+#if defined(WIN64)
+int _st_win64_errno(int wsaerr, int connecting);
+#endif
 
 st_utime_t st_utime(void);
 _st_cond_t *st_cond_new(void);

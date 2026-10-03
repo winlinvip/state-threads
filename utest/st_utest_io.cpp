@@ -2199,3 +2199,136 @@ VOID TEST(IoOpenTest, RegularFileNeverWaits)
     EXPECT_LT(st_utime() - starttime, ST_UTEST_TIMEOUT);
 }
 #endif
+
+#ifdef _WIN32 // Windows only: Winsock errors
+// The Winsock error of a failed socket call, mapped to errno; connecting is set for connect.
+extern "C" int _st_win64_errno(int wsaerr, int connecting);
+
+// ST and its callers, such as SRS, check errno, but Winsock reports errors by WSAGetLastError, so ST maps them.
+VOID TEST(WinErrnoTest, MapsWinsockErrors)
+{
+    EXPECT_EQ(0, _st_win64_errno(0, 0));
+    EXPECT_EQ(EAGAIN, _st_win64_errno(WSAEWOULDBLOCK, 0));
+    EXPECT_EQ(EINPROGRESS, _st_win64_errno(WSAEINPROGRESS, 0));
+    EXPECT_EQ(EALREADY, _st_win64_errno(WSAEALREADY, 0));
+    EXPECT_EQ(EINTR, _st_win64_errno(WSAEINTR, 0));
+    EXPECT_EQ(ETIMEDOUT, _st_win64_errno(WSAETIMEDOUT, 0));
+    EXPECT_EQ(EBADF, _st_win64_errno(WSAEBADF, 0));
+    EXPECT_EQ(EACCES, _st_win64_errno(WSAEACCES, 0));
+    EXPECT_EQ(EFAULT, _st_win64_errno(WSAEFAULT, 0));
+    EXPECT_EQ(EINVAL, _st_win64_errno(WSAEINVAL, 0));
+    EXPECT_EQ(EMFILE, _st_win64_errno(WSAEMFILE, 0));
+    EXPECT_EQ(ENOTSOCK, _st_win64_errno(WSAENOTSOCK, 0));
+    EXPECT_EQ(EDESTADDRREQ, _st_win64_errno(WSAEDESTADDRREQ, 0));
+    EXPECT_EQ(EMSGSIZE, _st_win64_errno(WSAEMSGSIZE, 0));
+    EXPECT_EQ(EPROTOTYPE, _st_win64_errno(WSAEPROTOTYPE, 0));
+    EXPECT_EQ(ENOPROTOOPT, _st_win64_errno(WSAENOPROTOOPT, 0));
+    EXPECT_EQ(EPROTONOSUPPORT, _st_win64_errno(WSAEPROTONOSUPPORT, 0));
+    EXPECT_EQ(EPROTONOSUPPORT, _st_win64_errno(WSAESOCKTNOSUPPORT, 0));
+    EXPECT_EQ(EOPNOTSUPP, _st_win64_errno(WSAEOPNOTSUPP, 0));
+    EXPECT_EQ(EAFNOSUPPORT, _st_win64_errno(WSAEPFNOSUPPORT, 0));
+    EXPECT_EQ(EAFNOSUPPORT, _st_win64_errno(WSAEAFNOSUPPORT, 0));
+    EXPECT_EQ(EADDRINUSE, _st_win64_errno(WSAEADDRINUSE, 0));
+    EXPECT_EQ(EADDRNOTAVAIL, _st_win64_errno(WSAEADDRNOTAVAIL, 0));
+    EXPECT_EQ(ENETDOWN, _st_win64_errno(WSAENETDOWN, 0));
+    EXPECT_EQ(ENETUNREACH, _st_win64_errno(WSAENETUNREACH, 0));
+    EXPECT_EQ(ENETRESET, _st_win64_errno(WSAENETRESET, 0));
+    EXPECT_EQ(ECONNABORTED, _st_win64_errno(WSAECONNABORTED, 0));
+    EXPECT_EQ(ECONNRESET, _st_win64_errno(WSAECONNRESET, 0));
+    EXPECT_EQ(ENOBUFS, _st_win64_errno(WSAENOBUFS, 0));
+    EXPECT_EQ(EISCONN, _st_win64_errno(WSAEISCONN, 0));
+    EXPECT_EQ(ENOTCONN, _st_win64_errno(WSAENOTCONN, 0));
+    EXPECT_EQ(EPIPE, _st_win64_errno(WSAESHUTDOWN, 0));
+    EXPECT_EQ(ECONNREFUSED, _st_win64_errno(WSAECONNREFUSED, 0));
+    EXPECT_EQ(ELOOP, _st_win64_errno(WSAELOOP, 0));
+    EXPECT_EQ(ENAMETOOLONG, _st_win64_errno(WSAENAMETOOLONG, 0));
+    EXPECT_EQ(EHOSTUNREACH, _st_win64_errno(WSAEHOSTDOWN, 0));
+    EXPECT_EQ(EHOSTUNREACH, _st_win64_errno(WSAEHOSTUNREACH, 0));
+    EXPECT_EQ(ENOTEMPTY, _st_win64_errno(WSAENOTEMPTY, 0));
+    EXPECT_EQ(EBADF, _st_win64_errno(WSA_INVALID_HANDLE, 0));
+    EXPECT_EQ(ENOMEM, _st_win64_errno(WSA_NOT_ENOUGH_MEMORY, 0));
+    EXPECT_EQ(EINVAL, _st_win64_errno(WSA_INVALID_PARAMETER, 0));
+    EXPECT_EQ(ECANCELED, _st_win64_errno(WSA_OPERATION_ABORTED, 0));
+    EXPECT_EQ(EINVAL, _st_win64_errno(WSANOTINITIALISED, 0));
+}
+
+// A non-blocking connect that has not finished yet fails with WSAEWOULDBLOCK, which is EINPROGRESS on POSIX, so
+// st_connect waits for it. Other calls keep EAGAIN, and connect maps every other error as usual.
+VOID TEST(WinErrnoTest, ConnectWouldBlockIsInProgress)
+{
+    EXPECT_EQ(EINPROGRESS, _st_win64_errno(WSAEWOULDBLOCK, 1));
+    EXPECT_EQ(EINPROGRESS, _st_win64_errno(WSAEINPROGRESS, 1));
+    EXPECT_EQ(EALREADY, _st_win64_errno(WSAEALREADY, 1));
+    EXPECT_EQ(ECONNREFUSED, _st_win64_errno(WSAECONNREFUSED, 1));
+    EXPECT_EQ(ETIMEDOUT, _st_win64_errno(WSAETIMEDOUT, 1));
+    EXPECT_EQ(EAGAIN, _st_win64_errno(WSAEWOULDBLOCK, 0));
+}
+
+// An error with no errno equivalent is EIO, never 0, so the failure is not lost; WSAGetLastError still has it.
+VOID TEST(WinErrnoTest, UnknownErrorIsIo)
+{
+    EXPECT_EQ(EIO, _st_win64_errno(WSASYSNOTREADY, 0));
+    EXPECT_EQ(EIO, _st_win64_errno(WSAHOST_NOT_FOUND, 0));
+    EXPECT_EQ(EIO, _st_win64_errno(-1, 0));
+    EXPECT_EQ(EIO, _st_win64_errno(WSASYSNOTREADY, 1));
+}
+
+// The errors that real non-blocking sockets report map to what ST's I/O loops expect.
+VOID TEST(WinErrnoTest, RealSocketErrors)
+{
+    WSADATA wsa;
+    ASSERT_EQ(0, WSAStartup(MAKEWORD(2, 2), &wsa));
+
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(INVALID_SOCKET, listener);
+    sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int addrlen = sizeof(addr);
+    ASSERT_EQ(0, ::bind(listener, (sockaddr*)&addr, addrlen));
+    ASSERT_EQ(0, ::listen(listener, 8));
+    ASSERT_EQ(0, ::getsockname(listener, (sockaddr*)&addr, &addrlen));
+    u_long nonblock = 1;
+    ASSERT_EQ(0, ioctlsocket(listener, FIONBIO, &nonblock));
+
+    // No client yet: accept would block.
+    EXPECT_EQ(INVALID_SOCKET, ::accept(listener, NULL, NULL));
+    EXPECT_EQ(EAGAIN, _st_win64_errno(WSAGetLastError(), 0));
+
+    // Not connected: send and recv fail with ENOTCONN.
+    SOCKET client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(INVALID_SOCKET, client);
+    char c = 0;
+    EXPECT_EQ(SOCKET_ERROR, ::recv(client, &c, 1, 0));
+    EXPECT_EQ(ENOTCONN, _st_win64_errno(WSAGetLastError(), 0));
+
+    // A non-blocking connect is in progress.
+    ASSERT_EQ(0, ioctlsocket(client, FIONBIO, &nonblock));
+    int r = ::connect(client, (sockaddr*)&addr, addrlen);
+    if (r == SOCKET_ERROR) {
+        EXPECT_EQ(EINPROGRESS, _st_win64_errno(WSAGetLastError(), 1));
+    }
+
+    // Wait for the connection, then a recv with no data would block.
+    fd_set wfds;
+    FD_ZERO(&wfds);
+    FD_SET(client, &wfds);
+    timeval tv = {5, 0};
+    ASSERT_EQ(1, ::select(0, NULL, &wfds, NULL, &tv));
+    EXPECT_EQ(SOCKET_ERROR, ::recv(client, &c, 1, 0));
+    EXPECT_EQ(EAGAIN, _st_win64_errno(WSAGetLastError(), 0));
+
+    // Connecting again: already connected.
+    EXPECT_EQ(SOCKET_ERROR, ::connect(client, (sockaddr*)&addr, addrlen));
+    EXPECT_EQ(EISCONN, _st_win64_errno(WSAGetLastError(), 1));
+
+    // A closed socket is not a socket.
+    closesocket(client);
+    EXPECT_EQ(SOCKET_ERROR, ::send(client, &c, 1, 0));
+    EXPECT_EQ(ENOTSOCK, _st_win64_errno(WSAGetLastError(), 0));
+
+    closesocket(listener);
+    WSACleanup();
+}
+#endif

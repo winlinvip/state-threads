@@ -1251,21 +1251,34 @@ static _st_eventsys_t _st_epoll_eventsys = {
 
 #if defined (WIN64)
 /*****************************************
- * Native Windows event system stub, so ST links. Every operation fails with
- * ENOSYS until a Windows event system is ported.
+ * Native Windows event system, minimal: the dispatch only waits for the sleep
+ * timeout, so st_usleep, timed waits, and the scheduler work. Windows select()
+ * with no sockets fails instead of sleeping, so the dispatch sleeps itself.
+ * Descriptor polling fails with ENOSYS until the WSAPoll backend is ported.
  */
-#include <stdio.h>
 
 ST_HIDDEN int _st_win64_init(void)
 {
-    errno = ENOSYS;
-    return -1;
+    return 0;
 }
 
 ST_HIDDEN void _st_win64_dispatch(void)
 {
-    fprintf(stderr, "ST: the Windows event system is not ported yet\n");
-    abort();
+    st_utime_t min_timeout;
+    DWORD ms;
+
+    if (_st_this_vp.sleep_q == NULL) {
+        /* Nothing can wake a thread, like select() with no descriptors and no timeout. */
+        ms = INFINITE;
+    } else {
+        min_timeout = (_st_this_vp.sleep_q->due <= _st_this_vp.last_clock) ? 0 :
+                      (_st_this_vp.sleep_q->due - _st_this_vp.last_clock);
+        /* Round up to milliseconds, so the sleeper is due when the dispatch returns. */
+        min_timeout = (min_timeout + 999) / 1000;
+        ms = (min_timeout >= INFINITE) ? INFINITE - 1 : (DWORD) min_timeout;
+    }
+
+    Sleep(ms);
 }
 
 ST_HIDDEN int _st_win64_pollset_add(struct pollfd *pds, int npds)
@@ -1298,6 +1311,7 @@ ST_HIDDEN int _st_win64_fd_close(int osfd)
 
 ST_HIDDEN int _st_win64_fd_getlimit(void)
 {
+    /* No limit of the event system itself. */
     return 0;
 }
 
@@ -1305,9 +1319,26 @@ ST_HIDDEN void _st_win64_destroy(void)
 {
 }
 
+/*
+ * One backend for both choices (D8): ST_EVENTSYS_DEFAULT and ST_EVENTSYS_SELECT give the
+ * select-like default, and ST_EVENTSYS_ALT is accepted, so callers that ask for it work.
+ */
 static _st_eventsys_t _st_win64_eventsys = {
-    "win64-stub",
-    ST_EVENTSYS_DEFAULT,
+    "win64",
+    ST_EVENTSYS_SELECT,
+    _st_win64_init,
+    _st_win64_dispatch,
+    _st_win64_pollset_add,
+    _st_win64_pollset_del,
+    _st_win64_fd_new,
+    _st_win64_fd_close,
+    _st_win64_fd_getlimit,
+    _st_win64_destroy
+};
+
+static _st_eventsys_t _st_win64_alt_eventsys = {
+    "win64",
+    ST_EVENTSYS_ALT,
     _st_win64_init,
     _st_win64_dispatch,
     _st_win64_pollset_add,
@@ -1332,8 +1363,12 @@ int st_set_eventsys(int eventsys)
     }
 
 #if defined (WIN64)
-    if (eventsys == ST_EVENTSYS_DEFAULT) {
+    if (eventsys == ST_EVENTSYS_SELECT || eventsys == ST_EVENTSYS_DEFAULT) {
         _st_eventsys = &_st_win64_eventsys;
+        return 0;
+    }
+    if (eventsys == ST_EVENTSYS_ALT) {
+        _st_eventsys = &_st_win64_alt_eventsys;
         return 0;
     }
 #endif

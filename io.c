@@ -176,10 +176,17 @@ static int _st_osfd_limit = -1;
 static void _st_netfd_free_aux_data(_st_netfd_t *fd);
 
 #if defined(WIN64)
-/* Windows has no SIGPIPE or rlimit; fail until the Windows I/O is ported. */
+/*
+ * Windows has no SIGPIPE and no rlimit. A process may open up to 2^24 handles, sockets
+ * included, so report that unless the event system has a lower limit.
+ */
+#define _ST_WIN64_OSFD_LIMIT (1 << 24)
+
 int _st_io_init(void)
 {
-    return _st_win64_enosys();
+    int fdlim = (*_st_eventsys->fd_getlimit)();
+    _st_osfd_limit = (fdlim > 0 && fdlim < _ST_WIN64_OSFD_LIMIT) ? fdlim : _ST_WIN64_OSFD_LIMIT;
+    return 0;
 }
 #else
 int _st_io_init(void)

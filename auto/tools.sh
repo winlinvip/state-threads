@@ -16,6 +16,8 @@
 # The arguments name the tools to run, every folder in tools/ by default.
 # Each tool reads ST_TOOL_EVENTSYS, select or alt. It prints "<name> <eventsys> OK"
 # per run, or "FAILED <name> <eventsys>" with the output, and exits 1 at the first failure.
+# A tool that this platform does not support prints only "SKIP <name>: <why>" and exits 0,
+# which shows as "SKIP <name>: <why> (<eventsys>)".
 #
 # On native Windows, run it from Git Bash with the MSVC environment on PATH, where
 # uname -s is MINGW64_NT-* or MSYS_NT-*: it builds win64-debug and runs <name>.exe.
@@ -63,6 +65,10 @@ for dir in "${tool_dirs[@]}"; do
             echo "$out"
             echo "FAILED $name $eventsys"
             exit 1
+        fi
+        if [[ $out == "SKIP $name:"* ]]; then
+            echo "$out ($eventsys)"
+            continue
         fi
         echo "$name $eventsys OK"
     done

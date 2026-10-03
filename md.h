@@ -70,8 +70,14 @@ typedef struct _st_jmp_buf {
      * Linux    __riscv                 long[14]
      * Linux    __loongarch64           long[12]
      * Cygwin64 __amd64__/__x86_64__    long[8]
+     * Win64    _M_X64                  long long[36]
      */
+#if defined(WIN64)
+    /* MSVC long is 32-bit (LLP64), so use 64-bit slots for registers and pointers. */
+    long long __jmpbuf[36];
+#else
     long __jmpbuf[22];
+#endif
 } _st_jmp_buf_t[1];
 
 /* Defined in *.S file and implemented by ASM. */
@@ -182,6 +188,44 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
         struct timeval tv;              \
         (void) gettimeofday(&tv, NULL); \
         return (tv.tv_sec * 1000000LL + tv.tv_usec)
+
+#elif defined (WIN64)
+
+    /*
+     * Native Windows x64 with MSVC, not CYGWIN64. The Windows headers come from
+     * public.h (winsock2.h includes windows.h). Stacks use MALLOC_STACK.
+     */
+    #define MD_ACCEPT_NB_NOT_INHERITED
+    #define MD_HAVE_SOCKLEN_T
+
+    /* MSVC has no __thread; use its thread-local storage class. */
+    #define __thread __declspec(thread)
+
+    /*
+     * The jmpbuf layout in 8-byte slots: 0 rbx, 1 rbp, 2 rdi, 3 rsi, 4-7 r12-r15,
+     * 8 rsp, 9 pc, 10-12 TIB stack bounds, then mxcsr, x87 control word, and
+     * xmm6-xmm15 from byte 128 to 287.
+     */
+    #if defined(_M_X64) || defined(_M_AMD64)
+        #define MD_GET_SP(_t) *((long long *)&((_t)->context[0].__jmpbuf[8]))
+    #else
+        #error Unknown CPU architecture
+    #endif
+
+    /* Monotonic time in microseconds, split to avoid overflow of ticks * 1000000. */
+    #define MD_GET_UTIME()                                              \
+        LARGE_INTEGER counter, freq;                                    \
+        QueryPerformanceCounter(&counter);                              \
+        QueryPerformanceFrequency(&freq);                               \
+        return (st_utime_t)((counter.QuadPart / freq.QuadPart) * 1000000LL + \
+            (counter.QuadPart % freq.QuadPart) * 1000000LL / freq.QuadPart)
+
+    static inline int getpagesize(void)
+    {
+        SYSTEM_INFO si;
+        GetSystemInfo(&si);
+        return (int)si.dwPageSize;
+    }
 
 #else
     #error Unknown OS

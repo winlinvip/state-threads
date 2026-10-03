@@ -45,9 +45,13 @@
 #define __ST_COMMON_H__
 
 #include <stddef.h>
+#if !defined(WIN64)
 #include <unistd.h>
+#endif
 #include <sys/types.h>
+#if !defined(WIN64)
 #include <sys/time.h>
+#endif
 #include <setjmp.h>
 
 /* Enable assertions only if DEBUG is defined */

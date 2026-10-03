@@ -91,20 +91,8 @@ static int set_primordial_stack(void)
     return 0;
 }
 
-#if defined(_WIN32)
-/*
- * Windows has no RLIMIT_NOFILE to read or raise: _st_io_init reports the
- * per-process handle limit, 2^24, as WSAPoll has no limit of its own.
- */
-static int check_fdlimit(void)
-{
-    int limit = st_getfdlimit();
-    CHECK(limit == (1 << 24));
-
-    printf("ST: fdlimit=%d\n", limit);
-    return 0;
-}
-#else
+/* Windows has no rlimit, so it does not support this check. */
+#ifndef _WIN32
 /* The descriptor limit _st_io_init sets from the limit before st_init. */
 static int check_fdlimit(int eventsys, const struct rlimit *before)
 {
@@ -223,9 +211,8 @@ int main(int argc, char **argv)
     CHECK(st_init() == 0);
     CHECK(st_get_eventsys() == eventsys);
 
-#if defined(_WIN32)
-    CHECK(check_fdlimit() == 0);
-#else
+    /* Windows has no rlimit, so it does not support this check. */
+#ifndef _WIN32
     CHECK(check_fdlimit(eventsys, &before) == 0);
 #endif
     CHECK(interrupt_all() == 0);

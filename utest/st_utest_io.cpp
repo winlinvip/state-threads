@@ -2948,3 +2948,141 @@ VOID TEST(WinIoTest, CloseClosesSocket)
     EXPECT_EQ(ENOTSOCK, errno);
 }
 #endif
+
+// The test helper st_utest_stream_pair gives two connected stream sockets that ST can wait on: a socketpair on POSIX,
+// and a loopback TCP connection on Windows, which has no socketpair.
+
+// Sends all of the data on a blocking socket.
+static bool utest_pair_send_all(int fd, const std::string& data)
+{
+    size_t sent = 0;
+    while (sent < data.size()) {
+        ssize_t n = st_utest_send(fd, data.data() + sent, data.size() - sent);
+        if (n <= 0) return false;
+        sent += (size_t)n;
+    }
+    return true;
+}
+
+// Receives exactly n bytes from a blocking socket, or less at the end of stream or on error.
+static std::string utest_pair_recv_n(int fd, size_t n)
+{
+    std::string got;
+    char buf[256];
+    while (got.size() < n) {
+        size_t want = std::min(sizeof(buf), n - got.size());
+        ssize_t r = st_utest_recv(fd, buf, want);
+        if (r <= 0) break;
+        got.append(buf, (size_t)r);
+    }
+    return got;
+}
+
+// Data goes both ways between the two ends, and closing one end is the end of stream at the other.
+VOID TEST(UtestPairTest, StreamPairCarriesBothWays)
+{
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(0, st_utest_stream_pair(fds));
+    EXPECT_GE(fds[0], 0);
+    EXPECT_GE(fds[1], 0);
+    EXPECT_NE(fds[0], fds[1]);
+
+    ASSERT_TRUE(utest_pair_send_all(fds[0], "ping"));
+    EXPECT_EQ("ping", utest_pair_recv_n(fds[1], 4));
+    ASSERT_TRUE(utest_pair_send_all(fds[1], "pong!"));
+    EXPECT_EQ("pong!", utest_pair_recv_n(fds[0], 5));
+
+    // More than a small buffer, in both directions.
+    std::string big(64 * 1024, 'x');
+    for (size_t i = 0; i < big.size(); i++) big[i] = (char)('a' + i % 26);
+    ASSERT_TRUE(utest_pair_send_all(fds[0], big));
+    EXPECT_TRUE(big == utest_pair_recv_n(fds[1], big.size()));
+    ASSERT_TRUE(utest_pair_send_all(fds[1], big));
+    EXPECT_TRUE(big == utest_pair_recv_n(fds[0], big.size()));
+
+    EXPECT_EQ(0, st_utest_close(fds[0]));
+    char c;
+    EXPECT_EQ(0, st_utest_recv(fds[1], &c, 1));
+    EXPECT_EQ(0, st_utest_close(fds[1]));
+}
+
+// Many pairs open at once are each connected to their own other end, never to another pair's.
+VOID TEST(UtestPairTest, ManyPairsAreEachConnectedToTheirOwnEnd)
+{
+    const int n = 64;
+    int fds[n][2];
+    for (int i = 0; i < n; i++) {
+        ASSERT_EQ(0, st_utest_stream_pair(fds[i])) << "pair " << i;
+    }
+
+    std::vector<int> all;
+    for (int i = 0; i < n; i++) {
+        all.push_back(fds[i][0]);
+        all.push_back(fds[i][1]);
+    }
+    std::sort(all.begin(), all.end());
+    EXPECT_TRUE(std::unique(all.begin(), all.end()) == all.end());
+
+    for (int i = 0; i < n; i++) {
+        char tag[16];
+        snprintf(tag, sizeof(tag), "pair-%03d", i);
+        ASSERT_TRUE(utest_pair_send_all(fds[i][0], tag));
+    }
+    for (int i = 0; i < n; i++) {
+        char tag[16];
+        snprintf(tag, sizeof(tag), "pair-%03d", i);
+        EXPECT_EQ(std::string(tag), utest_pair_recv_n(fds[i][1], strlen(tag)));
+    }
+
+    for (int i = 0; i < n; i++) {
+        EXPECT_EQ(0, st_utest_close(fds[i][0]));
+        EXPECT_EQ(0, st_utest_close(fds[i][1]));
+    }
+}
+
+#ifdef _WIN32 // Windows only: the stream pair is a loopback TCP connection
+// The two ends are the two sides of one loopback TCP connection, with Nagle off on both, so small writes are not
+// delayed, as on a Unix-domain socketpair. Both ends are blocking, as socketpair gives them.
+VOID TEST(UtestPairTest, StreamPairIsLoopbackTcpWithoutDelay)
+{
+    int fds[2] = {-1, -1};
+    ASSERT_EQ(0, st_utest_stream_pair(fds));
+
+    for (int i = 0; i < 2; i++) {
+        int type = 0;
+        socklen_t size = sizeof(type);
+        EXPECT_EQ(0, getsockopt(fds[i], SOL_SOCKET, SO_TYPE, &type, &size));
+        EXPECT_EQ(SOCK_STREAM, type);
+
+        int nodelay = 0;
+        size = sizeof(nodelay);
+        EXPECT_EQ(0, getsockopt(fds[i], IPPROTO_TCP, TCP_NODELAY, &nodelay, &size));
+        EXPECT_NE(0, nodelay) << "end " << i;
+    }
+
+    // Each end's peer is the other end, on 127.0.0.1.
+    sockaddr_in local[2], peer[2];
+    for (int i = 0; i < 2; i++) {
+        int size = sizeof(local[i]);
+        ASSERT_EQ(0, ::getsockname((SOCKET)fds[i], (sockaddr*)&local[i], &size));
+        size = sizeof(peer[i]);
+        ASSERT_EQ(0, ::getpeername((SOCKET)fds[i], (sockaddr*)&peer[i], &size));
+        EXPECT_EQ(AF_INET, local[i].sin_family);
+        EXPECT_EQ(htonl(INADDR_LOOPBACK), local[i].sin_addr.s_addr);
+    }
+    EXPECT_EQ(local[0].sin_port, peer[1].sin_port);
+    EXPECT_EQ(local[1].sin_port, peer[0].sin_port);
+    EXPECT_EQ(local[0].sin_addr.s_addr, peer[1].sin_addr.s_addr);
+    EXPECT_EQ(local[1].sin_addr.s_addr, peer[0].sin_addr.s_addr);
+
+    // Blocking: a receive with no data waits instead of failing with WSAEWOULDBLOCK, so it times out.
+    DWORD timeout = 50;
+    EXPECT_EQ(0, setsockopt(fds[1], SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)));
+    char c;
+    EXPECT_EQ(-1, st_utest_recv(fds[1], &c, 1));
+    EXPECT_EQ(WSAETIMEDOUT, WSAGetLastError());
+
+    EXPECT_EQ(0, st_utest_close(fds[0]));
+    EXPECT_EQ(0, st_utest_close(fds[1]));
+}
+#endif

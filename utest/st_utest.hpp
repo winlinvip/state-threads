@@ -48,13 +48,66 @@ static inline int usleep(unsigned int us)
 // a pipe, a signal or a chosen descriptor number, keeps the POSIX calls.
 
 #ifdef _WIN32
-// Native Windows (winsock comes from st.h) has no socketpair, so the pair is a stub that fails until a loopback TCP
-// pair replaces it. Descriptors are winsock sockets that fit in an int.
+// Maps the last Winsock error to errno, as ST does.
+extern "C" int _st_win64_errno(int wsaerr, int connecting);
+
+// Native Windows (winsock comes from st.h) has no socketpair, so the pair is a loopback TCP connection of two blocking
+// sockets, with Nagle off so small writes are not delayed, as on a Unix-domain socketpair. Descriptors are winsock
+// sockets that fit in an int. Returns 0, or -1 with errno set.
 static inline int st_utest_stream_pair(int fds[2])
 {
     fds[0] = fds[1] = -1;
-    errno = ENOSYS;
-    return -1;
+    SOCKET listener = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    SOCKET client = INVALID_SOCKET, server = INVALID_SOCKET;
+    int err = 0;
+
+    sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int addrlen = sizeof(addr);
+    if (listener == INVALID_SOCKET || ::bind(listener, (sockaddr*)&addr, addrlen) != 0 ||
+        ::listen(listener, SOMAXCONN) != 0 || ::getsockname(listener, (sockaddr*)&addr, &addrlen) != 0 ||
+        (client = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET ||
+        ::connect(client, (sockaddr*)&addr, addrlen) != 0) {
+        err = ::WSAGetLastError();
+    }
+
+    // Accept the client's own connection: another process may connect to the port first, so check the peer address.
+    sockaddr_in self;
+    memset(&self, 0, sizeof(self));
+    int selflen = sizeof(self);
+    if (!err && ::getsockname(client, (sockaddr*)&self, &selflen) != 0) err = ::WSAGetLastError();
+    for (int i = 0; !err && server == INVALID_SOCKET && i < 16; i++) {
+        sockaddr_in peer;
+        int peerlen = sizeof(peer);
+        SOCKET s = ::accept(listener, (sockaddr*)&peer, &peerlen);
+        if (s == INVALID_SOCKET) {
+            err = ::WSAGetLastError();
+        } else if (peer.sin_port == self.sin_port && peer.sin_addr.s_addr == self.sin_addr.s_addr) {
+            server = s;
+        } else {
+            ::closesocket(s);
+        }
+    }
+    if (!err && server == INVALID_SOCKET) err = WSAECONNREFUSED;
+
+    BOOL nodelay = TRUE;
+    if (!err && (::setsockopt(client, IPPROTO_TCP, TCP_NODELAY, (const char*)&nodelay, sizeof(nodelay)) != 0 ||
+        ::setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (const char*)&nodelay, sizeof(nodelay)) != 0)) {
+        err = ::WSAGetLastError();
+    }
+
+    if (listener != INVALID_SOCKET) ::closesocket(listener);
+    if (err) {
+        if (client != INVALID_SOCKET) ::closesocket(client);
+        if (server != INVALID_SOCKET) ::closesocket(server);
+        errno = _st_win64_errno(err, 0);
+        return -1;
+    }
+    fds[0] = (int)client;
+    fds[1] = (int)server;
+    return 0;
 }
 
 // Winsock takes the option value as char*, so these overloads let tests pass any pointer as on POSIX.

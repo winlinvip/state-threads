@@ -50,6 +50,19 @@
 #endif
 #include "common.h"
 
+#if defined(WIN64)
+/* Windows has no mprotect: the red zones use VirtualProtect, on VirtualAlloc pages only. */
+#define PROT_NONE  0x0
+#define PROT_READ  0x1
+#define PROT_WRITE 0x2
+static int _st_win64_mprotect(void *addr, size_t len, int prot)
+{
+    DWORD old;
+    return VirtualProtect(addr, len, prot ? PAGE_READWRITE : PAGE_NOACCESS, &old) ? 0 : -1;
+}
+#define mprotect _st_win64_mprotect
+#endif
+
 
 /* How much space to leave between the stacks, at each end */
 #define REDZONE	_st_this_vp.pagesize
@@ -154,6 +167,8 @@ static char *_st_new_stk_segment(int size)
 {
 #ifdef MALLOC_STACK
     void *vaddr = malloc(size);
+#elif defined(WIN64)
+    void *vaddr = VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 #else
     static int zero_fd = -1;
     int mmap_flags = MAP_PRIVATE;
@@ -185,6 +200,9 @@ void _st_delete_stk_segment(char *vaddr, int size)
 {
 #ifdef MALLOC_STACK
     free(vaddr);
+#elif defined(WIN64)
+    (void) size;
+    (void) VirtualFree(vaddr, 0, MEM_RELEASE);
 #else
     (void) munmap(vaddr, size);
 #endif

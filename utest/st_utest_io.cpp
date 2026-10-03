@@ -3086,3 +3086,34 @@ VOID TEST(UtestPairTest, StreamPairIsLoopbackTcpWithoutDelay)
     EXPECT_EQ(0, st_utest_close(fds[1]));
 }
 #endif
+
+#ifdef _WIN32 // Windows only: the WSAPoll event system
+// Both event system choices use the one WSAPoll backend on Windows.
+VOID TEST(WsaPollTest, EventSystemIsWsaPoll)
+{
+    EXPECT_STREQ("wsapoll", st_get_eventsys_name());
+}
+
+// Windows retries the SYN after a refusal, so a connect to a port where nothing listens fails after about two
+// seconds, longer than ST_UTEST_TIMEOUT of IoConnectTest.ConnectRefusedWhenNobodyListens. WSAPoll did not report a
+// failed connect before Windows 10 2004; here it must wake st_connect before its timeout, and the SO_ERROR it reads
+// is a POSIX errno, ECONNREFUSED, not the Winsock code.
+VOID TEST(WsaPollTest, ConnectRefusedIsReportedBeforeTimeout)
+{
+    struct sockaddr_in addr;
+    st_netfd_t listener = io_tcp_listen(addr, 8);
+    ASSERT_TRUE(listener != NULL);
+    ASSERT_EQ(0, st_netfd_close(listener));
+
+    st_netfd_t stfd = io_tcp_socket(AF_INET);
+    ASSERT_TRUE(stfd != NULL);
+    StStfdCleanup(stfd);
+
+    st_utime_t timeout = 10 * 1000 * ST_UTIME_MILLISECONDS;
+    st_utime_t starttime = st_utime();
+    errno = 0;
+    EXPECT_EQ(-1, st_connect(stfd, (sockaddr*)&addr, sizeof(addr), timeout));
+    EXPECT_EQ(ECONNREFUSED, errno);
+    EXPECT_LT(st_utime() - starttime, timeout);
+}
+#endif

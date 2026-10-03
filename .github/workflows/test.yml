@@ -51,7 +51,7 @@ jobs:
           disable_search: true
 
   # Native Windows with MSVC, built with GNU make from Git Bash. st_utest runs without
-  # the socket tests until the event system and I/O are ported.
+  # the few tests that Windows TCP behavior still fails.
   windows:
     name: actions-test-build-win64
     runs-on: windows-latest
@@ -96,17 +96,15 @@ jobs:
         shell: bash
         timeout-minutes: 10
         run: |
-          # Socket I/O is not ported to Windows yet, so skip the tests that need sockets.
-          # Remove this filter when the Windows event system and I/O are ported.
+          # Windows accepts a whole non-blocking send larger than SO_SNDBUF, so these writes
+          # do not wait for the reader, and it retries the SYN after a refusal for about two
+          # seconds. Remove this filter when those tests pass on Windows.
           skip=(
-            'IoAcceptTest.*' 'IoConnectTest.*' 'IoNetfdTest.*' 'IoReadTest.*' 'IoWriteTest.*'
-            'IoUdpTest.*' 'IoUdpMsgTest.*' 'PollTest.*' 'PollPriTest.*' 'TcpTest.*'
-            'EpollWorkflowTest.*'
-            'InitTest.SecondInitKeepsWaitingCoroutines'
-            'InterruptTest.StopReaderWithQueuedData'
-            'TimeoutHeapTest.EarlyWakeKeepsOthersOnTime'
-            'LearnKB.BasicNetfdReadTimeout' 'LearnKB.BasicNetfdWriteThenRead'
-            'LearnKB.NetfdFreeKeepsOsfdOpen' 'LearnKB.NetfdSpecificAndDestructorOnClose'
+            'IoConnectTest.ConnectRefusedWhenNobodyListens'
+            'IoWriteTest.WriteWaitsForSlowPlayer' 'IoWriteTest.WriteFailsWhenPlayerResetsMidStream'
+            'IoWriteTest.WritevWaitsForSlowPlayer' 'IoWriteTest.WritevWaitsForSlowPlayerWithMergedWrite'
+            'IoWriteTest.WritevFailsWhenPlayerResetsMidStream' 'IoWriteTest.WritevTimesOutAndLosesTheSentCount'
+            'IoWriteTest.WritevInterruptedWhenConnectionStops' 'IoWriteTest.WritevResidResumesAfterTimeout'
           )
           ./obj/st_utest.exe --gtest_filter="-$(IFS=:; echo "${skip[*]}")"
 

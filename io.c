@@ -144,9 +144,36 @@ static int _st_win64_connect(int fd, const struct sockaddr *addr, int addrlen)
     return (connect((SOCKET)fd, addr, addrlen) == SOCKET_ERROR) ? _st_win64_sock_fail(1) : 0;
 }
 
+/* SO_ERROR, which st_connect reads after the wait, is a Winsock error, so it gives the errno instead. */
 static int _st_win64_getsockopt(int fd, int level, int name, char *value, socklen_t *size)
 {
-    return (getsockopt((SOCKET)fd, level, name, value, size) == SOCKET_ERROR) ? _st_win64_sock_fail(0) : 0;
+    if (getsockopt((SOCKET)fd, level, name, value, size) == SOCKET_ERROR)
+        return _st_win64_sock_fail(0);
+    if (level == SOL_SOCKET && name == SO_ERROR && *size == sizeof(int) && *(int *)value)
+        *(int *)value = _st_win64_errno(*(int *)value, 1);
+    return 0;
+}
+
+/*
+ * Set errno from the Winsock error of a failed receive, and return -1. Winsock reports
+ * an ICMP port unreachable on a datagram socket as WSAECONNRESET, where POSIX gives
+ * ECONNREFUSED.
+ */
+static int _st_win64_recv_sock_fail(int fd)
+{
+    int err = WSAGetLastError();
+    int type = 0;
+    socklen_t size = sizeof(type);
+
+    if (err == WSAECONNRESET && getsockopt((SOCKET)fd, SOL_SOCKET, SO_TYPE, (char *)&type, &size) == 0 &&
+        type == SOCK_DGRAM) {
+        WSASetLastError(err);
+        errno = ECONNREFUSED;
+        return -1;
+    }
+    WSASetLastError(err);
+    errno = _st_win64_errno(err, 0);
+    return -1;
 }
 
 int _st_win64_recvfrom(int fd, void *buf, int len, int flags, struct sockaddr *from, socklen_t *fromlen)
@@ -157,7 +184,7 @@ int _st_win64_recvfrom(int fd, void *buf, int len, int flags, struct sockaddr *f
     /* A datagram larger than the buffer: POSIX returns the bytes that fit and drops the rest. */
     if (WSAGetLastError() == WSAEMSGSIZE)
         return len;
-    return _st_win64_sock_fail(0);
+    return _st_win64_recv_sock_fail(fd);
 }
 
 static int _st_win64_sendto(int fd, const void *msg, int len, int flags, const struct sockaddr *to, int tolen)
@@ -233,7 +260,7 @@ ssize_t _st_win64_read(int fd, void *buf, size_t nbyte)
     /* A datagram larger than the buffer: POSIX returns the bytes that fit and drops the rest. */
     if (WSAGetLastError() == WSAEMSGSIZE)
         return len;
-    return _st_win64_sock_fail(0);
+    return _st_win64_recv_sock_fail(fd);
 }
 
 ssize_t _st_win64_write(int fd, const void *buf, size_t nbyte)
@@ -290,11 +317,11 @@ static void _st_win64_bufs_free(WSABUF *bufs, WSABUF *local)
 }
 
 /* The result of a receive that failed: a truncated datagram is the bytes that fit. */
-static ssize_t _st_win64_recv_fail(size_t total)
+static ssize_t _st_win64_recv_fail(int fd, size_t total)
 {
     if (WSAGetLastError() == WSAEMSGSIZE)
         return (ssize_t)total;
-    return _st_win64_sock_fail(0);
+    return _st_win64_recv_sock_fail(fd);
 }
 
 ssize_t _st_win64_readv(int fd, const struct iovec *iov, int iov_size)
@@ -311,7 +338,7 @@ ssize_t _st_win64_readv(int fd, const struct iovec *iov, int iov_size)
     if (WSARecv((SOCKET)fd, bufs, count, &nbytes, &flags, NULL, NULL) == 0)
         rv = (ssize_t)nbytes;
     else
-        rv = _st_win64_recv_fail(total);
+        rv = _st_win64_recv_fail(fd, total);
     _st_win64_bufs_free(bufs, local);
     return rv;
 }
@@ -417,7 +444,7 @@ int _st_win64_recvmsg(int fd, struct msghdr *msg, int flags)
         wmsg.Control.len = 0;
         wmsg.dwFlags = 0;
     } else {
-        rv = _st_win64_sock_fail(0);
+        rv = _st_win64_recv_sock_fail(fd);
     }
 
     if (rv >= 0) {

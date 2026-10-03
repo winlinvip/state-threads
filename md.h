@@ -220,6 +220,17 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
      */
     #if defined(_M_X64) || defined(_M_AMD64)
         #define MD_GET_SP(_t) *((long long *)&((_t)->context[0].__jmpbuf[8]))
+        /*
+         * The TIB stack bounds of a new thread, restored from slots 10-12 by md_win64.asm:
+         * StackBase is the stack top, StackLimit and DeallocationStack are the stack bottom.
+         * Otherwise the thread runs with its creator's bounds, which breaks C++ exceptions,
+         * stack walks, and __chkstk for frames over a page.
+         */
+        #define MD_INIT_STACK_BOUNDS(_t, _bottom, _top) do {                   \
+            (_t)->context[0].__jmpbuf[10] = (long long)(intptr_t)(_top);    \
+            (_t)->context[0].__jmpbuf[11] = (long long)(intptr_t)(_bottom); \
+            (_t)->context[0].__jmpbuf[12] = (long long)(intptr_t)(_bottom); \
+        } while (0)
     #else
         #error Unknown CPU architecture
     #endif

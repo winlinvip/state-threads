@@ -678,6 +678,10 @@ _st_thread_t *st_thread_create(void *(*start)(void *arg), void *arg, int joinabl
         _st_thread_main();
     }
     MD_GET_SP(thread) = (intptr_t)(stack->sp);
+#ifdef MD_INIT_STACK_BOUNDS
+    /* Set the stack bounds the OS keeps for the new thread, such as the TIB on Windows. */
+    MD_INIT_STACK_BOUNDS(thread, stack->stk_bottom, stack->stk_top);
+#endif
 
     /* If thread is joinable, allocate a termination condition variable */
     if (joinable) {

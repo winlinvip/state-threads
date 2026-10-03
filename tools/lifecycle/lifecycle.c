@@ -10,9 +10,11 @@
 /* For pthread_getattr_np on Linux. */
 #define _GNU_SOURCE
 
+#ifndef _WIN32
 #include <pthread.h>
 #include <sys/resource.h>
 #include <sys/select.h>
+#endif
 
 #include "tool.h"
 
@@ -66,7 +68,13 @@ static int set_primordial_stack(void)
 {
     char *top = NULL;
     size_t size = 0;
-#ifdef __APPLE__
+#if defined(_WIN32)
+    /* The whole reserved stack, from the TIB's DeallocationStack up to its StackBase. */
+    ULONG_PTR low = 0, high = 0;
+    GetCurrentThreadStackLimits(&low, &high);
+    top = (char *)high;
+    size = (size_t)(high - low);
+#elif defined(__APPLE__)
     pthread_t self = pthread_self();
     top = (char *)pthread_get_stackaddr_np(self);
     size = pthread_get_stacksize_np(self);
@@ -83,6 +91,20 @@ static int set_primordial_stack(void)
     return 0;
 }
 
+#if defined(_WIN32)
+/*
+ * Windows has no RLIMIT_NOFILE to read or raise: _st_io_init reports the
+ * per-process handle limit, 2^24, as WSAPoll has no limit of its own.
+ */
+static int check_fdlimit(void)
+{
+    int limit = st_getfdlimit();
+    CHECK(limit == (1 << 24));
+
+    printf("ST: fdlimit=%d\n", limit);
+    return 0;
+}
+#else
 /* The descriptor limit _st_io_init sets from the limit before st_init. */
 static int check_fdlimit(int eventsys, const struct rlimit *before)
 {
@@ -111,6 +133,7 @@ static int check_fdlimit(int eventsys, const struct rlimit *before)
         (unsigned long long)before->rlim_cur, (unsigned long long)before->rlim_max);
     return 0;
 }
+#endif
 
 /* Block four coroutines, then interrupt and join them; each must fail with EINTR at once. */
 static int interrupt_all(void)
@@ -182,8 +205,10 @@ int main(int argc, char **argv)
 
     CHECK(set_primordial_stack() == 0);
 
+#ifndef _WIN32
     struct rlimit before;
     CHECK(getrlimit(RLIMIT_NOFILE, &before) == 0);
+#endif
 
     CHECK(st_init() == 0);
     printf("ST: init ok, eventsys=%s\n", st_get_eventsys_name());
@@ -198,7 +223,11 @@ int main(int argc, char **argv)
     CHECK(st_init() == 0);
     CHECK(st_get_eventsys() == eventsys);
 
+#if defined(_WIN32)
+    CHECK(check_fdlimit() == 0);
+#else
     CHECK(check_fdlimit(eventsys, &before) == 0);
+#endif
     CHECK(interrupt_all() == 0);
 
     st_destroy();

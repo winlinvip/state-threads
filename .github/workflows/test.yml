@@ -50,17 +50,60 @@ jobs:
           files: coverage.xml
           disable_search: true
 
+  # Native Windows with MSVC, built with GNU make from Git Bash. Build only: st_utest
+  # cannot run until the context switch and the event system are ported.
+  windows:
+    name: actions-test-build-win64
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      ################################################################
+      # Build
+      - name: Setup MSVC environment
+        shell: pwsh
+        run: |
+          # Pass the vcvars64.bat environment to the next steps: INCLUDE, LIB, LIBPATH,
+          # and only the PATH directories that vcvars64.bat adds.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw "No Visual Studio with the MSVC x64 tools" }
+          $vars = cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw "vcvars64.bat failed" }
+          $old = $env:PATH -split ';'
+          foreach ($line in $vars) {
+            if ($line -match '^(INCLUDE|LIB|LIBPATH)=(.*)$') {
+              [IO.File]::AppendAllText($env:GITHUB_ENV, "$($Matches[1])=$($Matches[2])`n")
+            } elseif ($line -match '^PATH=(.*)$') {
+              foreach ($dir in $Matches[1] -split ';') {
+                if ($dir -and $old -notcontains $dir) { [IO.File]::AppendAllText($env:GITHUB_PATH, "$dir`n") }
+              }
+            }
+          }
+      - name: Build ST and utest with MSVC
+        shell: bash
+        run: |
+          command -v make >/dev/null || choco install make --no-progress -y
+          command -v make cl ml64 lib
+          make win64-debug-utest
+          test -f obj/st_utest.exe
+          make win64-optimized
+          test -f obj/libst.a
+
   # The single check to require for merging. It runs even when a needed job
   # fails, because a skipped required check counts as passed.
   final:
     name: actions-test-final
     runs-on: ubuntu-24.04
-    needs: [utest, coverage]
+    needs: [utest, coverage, windows]
     if: always()
 
     steps:
       - name: Check all jobs succeeded
         run: |
-          echo "utest: ${{ needs.utest.result }}, coverage: ${{ needs.coverage.result }}"
+          echo "utest: ${{ needs.utest.result }}, coverage: ${{ needs.coverage.result }}, windows: ${{ needs.windows.result }}"
           test "${{ needs.utest.result }}" = success
           test "${{ needs.coverage.result }}" = success
+          test "${{ needs.windows.result }}" = success

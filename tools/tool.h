@@ -256,16 +256,50 @@ static inline int tool_pipe(int fds[2])
 #endif
 }
 
+#if defined(_WIN32)
 /*
- * socketpair(2). Native Windows has none, so there an AF_UNIX stream pair is
- * connected through a path in the temp folder, the only kind it makes (D26).
+ * A pair of UDP sockets on 127.0.0.1, each connected to the other, so send
+ * and recv carry datagrams between them. Returns -1 with errno set on failure.
+ */
+static inline int tool_dgram_pair(int fds[2])
+{
+    struct sockaddr_storage a0, a1;
+    int l0 = (int)tool_loopback(AF_INET, 0, &a0), l1 = (int)tool_loopback(AF_INET, 0, &a1);
+    SOCKET s0 = socket(AF_INET, SOCK_DGRAM, 0), s1 = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s0 == INVALID_SOCKET || s1 == INVALID_SOCKET
+        || bind(s0, (struct sockaddr *)&a0, l0) || bind(s1, (struct sockaddr *)&a1, l1)
+        || getsockname(s0, (struct sockaddr *)&a0, &l0) || getsockname(s1, (struct sockaddr *)&a1, &l1)
+        || connect(s0, (struct sockaddr *)&a1, l1) || connect(s1, (struct sockaddr *)&a0, l0)) {
+        if (s0 != INVALID_SOCKET) {
+            closesocket(s0);
+        }
+        if (s1 != INVALID_SOCKET) {
+            closesocket(s1);
+        }
+        errno = EIO;
+        return -1;
+    }
+
+    fds[0] = (int)s0;
+    fds[1] = (int)s1;
+    return 0;
+}
+#endif
+
+/*
+ * socketpair(2). Native Windows has none, and its AF_UNIX is stream only, so
+ * there an AF_UNIX stream pair is connected through a path in the temp folder
+ * (D26), and a datagram pair is a connected loopback UDP pair (D28).
  */
 static inline int tool_socketpair(int domain, int type, int protocol, int fds[2])
 {
 #if defined(_WIN32)
-    if (domain != AF_UNIX || type != SOCK_STREAM || protocol != 0) {
+    if (domain != AF_UNIX || (type != SOCK_STREAM && type != SOCK_DGRAM) || protocol != 0) {
         errno = EINVAL;
         return -1;
+    }
+    if (type == SOCK_DGRAM) {
+        return tool_dgram_pair(fds);
     }
     return tool_stream_pair(AF_UNIX, fds);
 #else

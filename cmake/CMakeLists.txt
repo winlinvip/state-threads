@@ -21,8 +21,8 @@ set (CMAKE_CXX_STANDARD 11)
 # Native Windows x64 with MSVC, the WIN64 platform of ../Makefile, which stays the main build. This gives a Visual
 # Studio project of the utest for debugging, for example:
 #       cmake -S cmake -B build -G "Visual Studio 17 2022" -A x64
-# The tools are not built on Windows yet. No bash, and the source tree is not written: st.h is copied to the build
-# directory, so the obj junction made by make is left alone.
+# No bash, and the source tree is not written: st.h is copied to the build directory, so the obj junction made by
+# make is left alone.
 if (CMAKE_HOST_WIN32 AND NOT MSVC)
     message(FATAL_ERROR "Only MSVC is supported on Windows, for example the Visual Studio generator")
 endif()
@@ -56,6 +56,14 @@ if (MSVC)
     ADD_EXECUTABLE(st_utest ${ST_UTEST_SOURCE_FILES})
     TARGET_LINK_LIBRARIES(st_utest gtest gtest_main ws2_32)
     set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT st_utest)
+
+    # The tools ported to MSVC; backtrace, pcs, and stack are POSIX only.
+    foreach (TOOL helloworld jmpbuf porting verify)
+        set(ST_TOOL_SOURCE_FILES ${SOURCE_FILES})
+        AUX_SOURCE_DIRECTORY(${ST_DIR}/tools/${TOOL} ST_TOOL_SOURCE_FILES)
+        ADD_EXECUTABLE(st_${TOOL} ${ST_TOOL_SOURCE_FILES})
+        TARGET_LINK_LIBRARIES(st_${TOOL} ws2_32)
+    endforeach ()
 
     MESSAGE(STATUS "@see https://github.com/ossrs/state-threads#usage")
     return()

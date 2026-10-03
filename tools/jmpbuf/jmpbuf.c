@@ -18,8 +18,14 @@ typedef struct _st_jmp_buf {
      * Linux    __riscv                 long[14]
      * Linux    __loongarch64           long[12]
      * Cygwin64 __amd64__/__x86_64__    long[8]
+     * Win64    _M_X64                  long long[36]
      */
+#if defined(_WIN32)
+    /* The same as WIN64 in md.h: MSVC long is 32-bit (LLP64), so use 64-bit slots. */
+    long long __jmpbuf[36];
+#else
     long __jmpbuf[22];
+#endif
 } _st_jmp_buf_t[1];
 
 int main(int argc, char** argv)

@@ -187,6 +187,12 @@ make win64-debug-utest && ./obj/st_utest.exe
 
 The tests that need POSIX features (fork, signals, pipes, files) are not built on Windows, and a few are
 skipped with a reason, for example the write tests that need a partial send, which Winsock never does.
+The utest uses `ST_EVENTSYS_ALT`; set `ST_UTEST_EVENTSYS=default` (or `select`, `alt`) to run it with
+another event system, as CI does for both (both are WSAPoll on Windows):
+
+```bash
+ST_UTEST_EVENTSYS=default ./obj/st_utest.exe
+```
 
 With MSVC ASAN, whose runtime has the fiber API that `MD_ASAN` uses:
 

@@ -5,6 +5,22 @@
 
 #include <st.h>
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// getenv, without MSVC's C4996 deprecation warning.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+static const char* st_utest_getenv(const char* name)
+{
+    return getenv(name);
+}
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 std::ostream& operator<<(std::ostream& out, const ErrorObject* err) {
     if (!err) return out;
@@ -19,17 +35,51 @@ std::ostream& operator<<(std::ostream& out, const ErrorObject* err) {
 GTEST_API_ int main(int argc, char **argv) {
     // Select the best event system available on the OS. In Linux this is
     // epoll(). On BSD it will be kqueue. On Cygwin it will be select.
+    // Set ST_UTEST_EVENTSYS to "default", "select", or "alt" to run the suite with another one.
+    const char* eventsys = st_utest_getenv("ST_UTEST_EVENTSYS");
+    if (eventsys && *eventsys) {
+        int es = -1;
+        if (strcmp(eventsys, "default") == 0) es = ST_EVENTSYS_DEFAULT;
+        else if (strcmp(eventsys, "select") == 0) es = ST_EVENTSYS_SELECT;
+        else if (strcmp(eventsys, "alt") == 0) es = ST_EVENTSYS_ALT;
+        if (es == -1 || st_set_eventsys(es) == -1) {
+            fprintf(stderr, "st_utest: cannot use ST_UTEST_EVENTSYS=%s (default, select, or alt)\n", eventsys);
+            return 1;
+        }
+    } else {
 #if __CYGWIN__
-    assert(st_set_eventsys(ST_EVENTSYS_SELECT) != -1);
+        assert(st_set_eventsys(ST_EVENTSYS_SELECT) != -1);
 #else
-    assert(st_set_eventsys(ST_EVENTSYS_ALT) != -1);
+        assert(st_set_eventsys(ST_EVENTSYS_ALT) != -1);
 #endif
+    }
 
     // Initialize state-threads, create idle coroutine.
     assert(st_init() == 0);
 
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
+}
+
+// The event system main selects follows ST_UTEST_EVENTSYS when it is set ("default", "select", or "alt"), so CI can
+// run the whole suite once per event system without a rebuild. ST_EVENTSYS_DEFAULT reports ST_EVENTSYS_SELECT.
+VOID TEST(SampleTest, EventSysFollowsEnvironment)
+{
+    const char* env = st_utest_getenv("ST_UTEST_EVENTSYS");
+    std::string want = env ? env : "";
+
+    if (want == "default" || want == "select") {
+        EXPECT_EQ(ST_EVENTSYS_SELECT, st_get_eventsys());
+    } else if (want == "alt") {
+        EXPECT_EQ(ST_EVENTSYS_ALT, st_get_eventsys());
+    } else {
+        EXPECT_TRUE(want.empty()) << "unknown ST_UTEST_EVENTSYS=" << want;
+#if __CYGWIN__
+        EXPECT_EQ(ST_EVENTSYS_SELECT, st_get_eventsys());
+#else
+        EXPECT_EQ(ST_EVENTSYS_ALT, st_get_eventsys());
+#endif
+    }
 }
 
 // basic test and samples.

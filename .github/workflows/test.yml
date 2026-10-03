@@ -50,8 +50,9 @@ jobs:
           files: coverage.xml
           disable_search: true
 
-  # Native Windows with MSVC, built with GNU make from Git Bash. st_utest skips the few
-  # tests that Windows TCP behavior cannot pass, in the test code itself.
+  # Native Windows with MSVC, built with GNU make from Git Bash. st_utest runs with
+  # ST_EVENTSYS_DEFAULT and ST_EVENTSYS_ALT, and skips the few tests that Windows TCP
+  # behavior cannot pass, in the test code itself.
   windows:
     name: actions-test-build-win64
     runs-on: windows-latest
@@ -92,9 +93,18 @@ jobs:
 
       ################################################################
       # Tests
-      - name: Run ST utest
+      # Both event systems are WSAPoll on Windows; run the whole suite with each.
+      - name: Run ST utest with ST_EVENTSYS_DEFAULT
         shell: bash
         timeout-minutes: 10
+        env:
+          ST_UTEST_EVENTSYS: default
+        run: ./obj/st_utest.exe
+      - name: Run ST utest with ST_EVENTSYS_ALT
+        shell: bash
+        timeout-minutes: 10
+        env:
+          ST_UTEST_EVENTSYS: alt
         run: ./obj/st_utest.exe
 
       ################################################################

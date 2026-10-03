@@ -22,6 +22,9 @@
 
 /* On native Windows, st.h brings the Winsock 2 headers. */
 #include <st.h>
+#if defined(_WIN32)
+#include <afunix.h>
+#endif
 
 /* Print the failing check and its line, then return 1 from the caller. */
 #define CHECK(cond) do { \
@@ -181,6 +184,111 @@ static inline st_netfd_t tool_connect(int family, int port, st_utime_t timeout)
         return NULL;
     }
     return stfd;
+}
+
+#if defined(_WIN32)
+/*
+ * A connected pair of stream sockets of family, AF_INET over 127.0.0.1 or
+ * AF_UNIX at a path in the temp folder, made with bind, listen, connect and
+ * accept. fds[0] is the accepted end and fds[1] the client. Returns -1 with
+ * errno set on failure.
+ */
+static inline int tool_stream_pair(int family, int fds[2])
+{
+    struct sockaddr_storage addr;
+    int len;
+    if (family == AF_UNIX) {
+        static int seq = 0;
+        char dir[MAX_PATH];
+        struct sockaddr_un *a = (struct sockaddr_un *)&addr;
+        memset(&addr, 0, sizeof(addr));
+        a->sun_family = AF_UNIX;
+        if (!GetTempPathA(sizeof(dir), dir)) {
+            errno = ENOENT;
+            return -1;
+        }
+        snprintf(a->sun_path, sizeof(a->sun_path), "%sst-tool-%lu-%d.sock", dir, GetCurrentProcessId(), seq++);
+        DeleteFileA(a->sun_path);
+        len = (int)sizeof(*a);
+    } else {
+        len = (int)tool_loopback(AF_INET, 0, &addr);
+    }
+
+    SOCKET l = INVALID_SOCKET, c = INVALID_SOCKET, s = INVALID_SOCKET;
+    if ((l = socket(family, SOCK_STREAM, 0)) == INVALID_SOCKET
+        || bind(l, (struct sockaddr *)&addr, len) || listen(l, 1)
+        || getsockname(l, (struct sockaddr *)&addr, &len)
+        || (c = socket(family, SOCK_STREAM, 0)) == INVALID_SOCKET
+        || connect(c, (struct sockaddr *)&addr, len)
+        || (s = accept(l, NULL, NULL)) == INVALID_SOCKET) {
+        if (c != INVALID_SOCKET) {
+            closesocket(c);
+        }
+        s = INVALID_SOCKET;
+    }
+    if (l != INVALID_SOCKET) {
+        closesocket(l);
+    }
+    if (family == AF_UNIX) {
+        DeleteFileA(((struct sockaddr_un *)&addr)->sun_path);
+    }
+    if (s == INVALID_SOCKET) {
+        errno = EIO;
+        return -1;
+    }
+
+    fds[0] = (int)s;
+    fds[1] = (int)c;
+    return 0;
+}
+#endif
+
+/*
+ * A one-way channel, fds[0] to read and fds[1] to write: pipe(2), or on
+ * native Windows, where ST takes sockets only, a loopback TCP pair (D26).
+ */
+static inline int tool_pipe(int fds[2])
+{
+#if defined(_WIN32)
+    return tool_stream_pair(AF_INET, fds);
+#else
+    return pipe(fds);
+#endif
+}
+
+/*
+ * socketpair(2). Native Windows has none, so there an AF_UNIX stream pair is
+ * connected through a path in the temp folder, the only kind it makes (D26).
+ */
+static inline int tool_socketpair(int domain, int type, int protocol, int fds[2])
+{
+#if defined(_WIN32)
+    if (domain != AF_UNIX || type != SOCK_STREAM || protocol != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    return tool_stream_pair(AF_UNIX, fds);
+#else
+    return socketpair(domain, type, protocol, fds);
+#endif
+}
+
+/*
+ * write(2) to a descriptor from tool_pipe or tool_socketpair. On native
+ * Windows it is a socket: send, with EAGAIN when it would block.
+ */
+static inline ssize_t tool_write(int fd, const void *buf, size_t n)
+{
+#if defined(_WIN32)
+    int r = send((SOCKET)fd, (const char *)buf, (int)n, 0);
+    if (r == SOCKET_ERROR) {
+        errno = (WSAGetLastError() == WSAEWOULDBLOCK) ? EAGAIN : EIO;
+        return -1;
+    }
+    return r;
+#else
+    return write(fd, buf, n);
+#endif
 }
 
 #endif /* ST_TOOL_H */

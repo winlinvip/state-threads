@@ -103,6 +103,10 @@ int main(int argc, char** argv)
 #if defined(__x86_64__)
     supported = 1;
 #endif
+#elif defined(_WIN32)
+#if defined(_M_X64)
+    supported = 1;
+#endif
 #endif
     if (!supported) {
         printf("\nUnsupported OS or CPU, port md.h and an md_*.S file first\n");

@@ -3,6 +3,10 @@ LINUX_*_DBG
 CYGWIN64_*_DBG
 WIN64_*_DBG
 WIN64_*_OPT
+tools/*/*.exe
+tools/*/*.obj
+tools/*/*.ilk
+tools/*/*.pdb
 obj
 st.pc
 .idea

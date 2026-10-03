@@ -13,11 +13,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#endif
 
+/* On native Windows, st.h brings the Winsock 2 headers. */
 #include <st.h>
 
 /* Print the failing check and its line, then return 1 from the caller. */
@@ -34,6 +37,9 @@
  */
 static inline int tool_eventsys(void)
 {
+#ifdef _MSC_VER
+#pragma warning(suppress: 4996) /* getenv is not deprecated for this use. */
+#endif
     const char *v = getenv("ST_TOOL_EVENTSYS");
     if (!v || !strcmp(v, "select")) {
         return ST_EVENTSYS_SELECT;
@@ -47,6 +53,11 @@ static inline int tool_eventsys(void)
 /* The name st_get_eventsys_name() reports for an event system. */
 static inline const char *tool_eventsys_name(int eventsys)
 {
+#if defined(_WIN32)
+    /* Both event systems are WSAPoll on native Windows. */
+    (void)eventsys;
+    return "wsapoll";
+#else
     if (eventsys == ST_EVENTSYS_SELECT) {
         return "select";
     }
@@ -54,6 +65,7 @@ static inline const char *tool_eventsys_name(int eventsys)
     return "kqueue";
 #else
     return "epoll";
+#endif
 #endif
 }
 
@@ -72,6 +84,16 @@ static inline int tool_init(void)
     return 0;
 }
 
+/* Close a socket that no st_netfd_t owns: closesocket on native Windows, close elsewhere. */
+static inline void tool_close_socket(int fd)
+{
+#if defined(_WIN32)
+    closesocket(fd);
+#else
+    close(fd);
+#endif
+}
+
 /* Fill addr with the loopback address of family, 127.0.0.1 or ::1, and port. */
 static inline socklen_t tool_loopback(int family, int port, struct sockaddr_storage *addr)
 {
@@ -79,14 +101,14 @@ static inline socklen_t tool_loopback(int family, int port, struct sockaddr_stor
     if (family == AF_INET6) {
         struct sockaddr_in6 *a = (struct sockaddr_in6 *)addr;
         a->sin6_family = AF_INET6;
-        a->sin6_port = htons(port);
+        a->sin6_port = htons((unsigned short)port);
         a->sin6_addr = in6addr_loopback;
         return sizeof(*a);
     }
 
     struct sockaddr_in *a = (struct sockaddr_in *)addr;
     a->sin_family = AF_INET;
-    a->sin_port = htons(port);
+    a->sin_port = htons((unsigned short)port);
     a->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     return sizeof(*a);
 }
@@ -101,7 +123,7 @@ static inline st_netfd_t tool_listen(int family, int backlog, int *port)
     struct sockaddr_storage addr;
     socklen_t len = tool_loopback(family, 0, &addr);
 
-    int fd = socket(family, SOCK_STREAM, 0);
+    int fd = (int)socket(family, SOCK_STREAM, 0);
     if (fd < 0) {
         return NULL;
     }
@@ -109,7 +131,7 @@ static inline st_netfd_t tool_listen(int family, int backlog, int *port)
     if (bind(fd, (struct sockaddr *)&addr, len) < 0 || listen(fd, backlog) < 0
         || getsockname(fd, (struct sockaddr *)&addr, &len) < 0) {
         int err = errno;
-        close(fd);
+        tool_close_socket(fd);
         errno = err;
         return NULL;
     }
@@ -117,7 +139,7 @@ static inline st_netfd_t tool_listen(int family, int backlog, int *port)
     st_netfd_t stfd = st_netfd_open_socket(fd);
     if (!stfd) {
         int err = errno;
-        close(fd);
+        tool_close_socket(fd);
         errno = err;
         return NULL;
     }
@@ -139,7 +161,7 @@ static inline st_netfd_t tool_connect(int family, int port, st_utime_t timeout)
     struct sockaddr_storage addr;
     socklen_t len = tool_loopback(family, port, &addr);
 
-    int fd = socket(family, SOCK_STREAM, 0);
+    int fd = (int)socket(family, SOCK_STREAM, 0);
     if (fd < 0) {
         return NULL;
     }
@@ -147,7 +169,7 @@ static inline st_netfd_t tool_connect(int family, int port, st_utime_t timeout)
     st_netfd_t stfd = st_netfd_open_socket(fd);
     if (!stfd) {
         int err = errno;
-        close(fd);
+        tool_close_socket(fd);
         errno = err;
         return NULL;
     }

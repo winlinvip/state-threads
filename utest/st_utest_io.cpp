@@ -80,7 +80,7 @@ static int io_accept_from(int lfd, int cfd)
         if (sfd < 0 || (peer.sin_port == local.sin_port && peer.sin_addr.s_addr == local.sin_addr.s_addr)) {
             return sfd;
         }
-        ::close(sfd);
+        st_utest_close(sfd);
     }
 }
 
@@ -100,21 +100,21 @@ static bool io_tcp_pair(IoTestTcpPair& pair)
     socklen_t addrlen = sizeof(addr);
     if (::bind(lfd, (sockaddr*)&addr, sizeof(addr)) < 0 || ::listen(lfd, 1) < 0
         || getsockname(lfd, (sockaddr*)&addr, &addrlen) < 0) {
-        ::close(lfd);
+        st_utest_close(lfd);
         return false;
     }
 
     int cfd = socket(AF_INET, SOCK_STREAM, 0);
     if (cfd < 0 || ::connect(cfd, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        if (cfd >= 0) ::close(cfd);
-        ::close(lfd);
+        if (cfd >= 0) st_utest_close(cfd);
+        st_utest_close(lfd);
         return false;
     }
 
     int sfd = io_accept_from(lfd, cfd);
-    ::close(lfd);
+    st_utest_close(lfd);
     if (sfd < 0) {
-        ::close(cfd);
+        st_utest_close(cfd);
         return false;
     }
 
@@ -689,12 +689,12 @@ static st_netfd_t io_tcp_listen(struct sockaddr_in& addr, int backlog)
     socklen_t addrlen = sizeof(addr);
     if (::bind(lfd, (sockaddr*)&addr, sizeof(addr)) < 0 || ::listen(lfd, backlog) < 0
         || getsockname(lfd, (sockaddr*)&addr, &addrlen) < 0) {
-        ::close(lfd);
+        st_utest_close(lfd);
         return NULL;
     }
 
     st_netfd_t stfd = st_netfd_open_socket(lfd);
-    if (!stfd) ::close(lfd);
+    if (!stfd) st_utest_close(lfd);
     return stfd;
 }
 
@@ -714,7 +714,7 @@ static void* io_connect_coroutine(void* arg)
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     c->stfd_ = (fd < 0) ? NULL : st_netfd_open_socket(fd);
     if (!c->stfd_) {
-        if (fd >= 0) ::close(fd);
+        if (fd >= 0) st_utest_close(fd);
         return NULL;
     }
 
@@ -923,7 +923,7 @@ static st_netfd_t io_tcp_socket(int family)
     int fd = socket(family, SOCK_STREAM, 0);
     if (fd < 0) return NULL;
     st_netfd_t stfd = st_netfd_open_socket(fd);
-    if (!stfd) ::close(fd);
+    if (!stfd) st_utest_close(fd);
     return stfd;
 }
 
@@ -1850,8 +1850,8 @@ VOID TEST(IoNetfdTest, OpenClosedDescriptorFails)
 
     int closed[2];
     ASSERT_EQ(0, st_utest_stream_pair(closed));
-    ::close(closed[0]);
-    ::close(closed[1]);
+    st_utest_close(closed[0]);
+    st_utest_close(closed[1]);
 
     errno = 0;
     EXPECT_TRUE(st_netfd_open(closed[0]) == NULL);
@@ -1866,7 +1866,7 @@ VOID TEST(IoNetfdTest, OpenClosedDescriptorFails)
     EXPECT_TRUE(reader == first);
 
     EXPECT_EQ(0, st_netfd_close(reader));
-    ::close(fds[1]);
+    st_utest_close(fds[1]);
 }
 
 static std::vector<std::string> _io_freed_specifics;
@@ -1937,7 +1937,7 @@ VOID TEST(IoNetfdTest, SerializeAcceptIsNoOp)
     st_netfd_t client = st_accept(listener, NULL, NULL, ST_UTEST_TIMEOUT);
     EXPECT_TRUE(client != NULL);
     if (client) st_netfd_close(client);
-    ::close(cfd);
+    st_utest_close(cfd);
     EXPECT_EQ(0, st_netfd_close(listener));
 }
 
@@ -2330,5 +2330,149 @@ VOID TEST(WinErrnoTest, RealSocketErrors)
 
     closesocket(listener);
     WSACleanup();
+}
+#endif
+
+#ifdef _WIN32 // Windows only: Winsock startup and SOCKET values
+// Whether Winsock is started, so a socket can be created. Sets wsaerr to the error if not.
+static bool winsock_test_usable(int* wsaerr = NULL)
+{
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (wsaerr) *wsaerr = (s == INVALID_SOCKET) ? WSAGetLastError() : 0;
+    if (s == INVALID_SOCKET) return false;
+    closesocket(s);
+    return true;
+}
+
+// Winsock needs WSAStartup before any socket call, and ST's callers, such as SRS, do not call it: st_init does, so the
+// main of the utest, which only calls st_init, can create sockets.
+VOID TEST(WinsockTest, InitStartsWinsock)
+{
+    int wsaerr = 0;
+    EXPECT_TRUE(winsock_test_usable(&wsaerr));
+    EXPECT_EQ(0, wsaerr);
+}
+
+// ST keeps descriptors as int (st_netfd_open, st_netfd_fileno), but a Windows SOCKET is a 64-bit handle. Kernel handles
+// have only 32 significant bits, so a real SOCKET fits in a non-negative int and comes back unchanged, and the int
+// still works as the socket, which is how ST and the tests pass it to Winsock.
+VOID TEST(WinsockTest, SocketRoundTripsThroughInt)
+{
+    // Each socket with its type.
+    std::vector<std::pair<SOCKET, int> > sockets;
+    for (int i = 0; i < 128; i++) {
+        SOCKET tcp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        ASSERT_NE(INVALID_SOCKET, tcp);
+        sockets.push_back(std::make_pair(tcp, (int)SOCK_STREAM));
+
+        SOCKET udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        ASSERT_NE(INVALID_SOCKET, udp);
+        sockets.push_back(std::make_pair(udp, (int)SOCK_DGRAM));
+
+        // IPv6 may be unavailable on the host.
+        SOCKET tcp6 = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+        if (tcp6 != INVALID_SOCKET) sockets.push_back(std::make_pair(tcp6, (int)SOCK_STREAM));
+    }
+
+    for (size_t i = 0; i < sockets.size(); i++) {
+        SOCKET s = sockets[i].first;
+        int fd = (int)s;
+        EXPECT_GE(fd, 0);
+        EXPECT_EQ(s, (SOCKET)fd);
+
+        // The int is still the socket.
+        int type = 0;
+        socklen_t size = sizeof(type);
+        EXPECT_EQ(0, getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &size));
+        EXPECT_EQ(sockets[i].second, type);
+    }
+
+    for (size_t i = 0; i < sockets.size(); i++) {
+        EXPECT_EQ(0, st_utest_close((int)sockets[i].first));
+    }
+}
+
+#define WINSOCK_TEST_CHILD_OK 42
+
+static DWORD WINAPI winsock_test_thread(LPVOID arg)
+{
+    int* r = (int*)arg;
+    // A new OS thread has its own ST, so st_init starts Winsock again, and st_destroy cleans up only that start.
+    r[0] = st_init();
+    r[1] = winsock_test_usable();
+    st_destroy();
+    return 0;
+}
+
+// Runs the utest again as a child process with only the disabled test, and returns its exit code, or -1.
+static int winsock_test_run_child(const char* test)
+{
+    char exe[MAX_PATH];
+    DWORD n = GetModuleFileNameA(NULL, exe, sizeof(exe));
+    if (n == 0 || n >= sizeof(exe)) return -1;
+
+    std::string cmd = std::string("\"") + exe + "\" --gtest_also_run_disabled_tests --gtest_filter=" + test;
+    std::vector<char> line(cmd.begin(), cmd.end());
+    line.push_back(0);
+
+    fflush(stdout);
+    fflush(stderr);
+
+    STARTUPINFOA si;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi;
+    if (!CreateProcessA(NULL, &line[0], NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) return -1;
+
+    // A hang kills the child and fails the test, instead of hanging the suite.
+    DWORD code = (DWORD)-1;
+    if (WaitForSingleObject(pi.hProcess, 10000) == WAIT_OBJECT_0) {
+        GetExitCodeProcess(pi.hProcess, &code);
+    } else {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, INFINITE);
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return (int)code;
+}
+
+// Runs only in the child process of InitStartsAndDestroyCleansUp, because st_destroy on the main thread stops Winsock
+// for the rest of the process. Exits with WINSOCK_TEST_CHILD_OK if every check passed.
+VOID TEST(WinsockTest, DISABLED_ChildInitAndDestroy)
+{
+    // The main of the utest called st_init, which started Winsock.
+    EXPECT_TRUE(winsock_test_usable());
+
+    // Another OS thread starts and destroys its own ST.
+    int r[2] = {-1, -1};
+    HANDLE trd = CreateThread(NULL, 0, winsock_test_thread, r, 0, NULL);
+    ASSERT_TRUE(trd != NULL);
+    EXPECT_EQ(WAIT_OBJECT_0, WaitForSingleObject(trd, 10000));
+    CloseHandle(trd);
+    EXPECT_EQ(0, r[0]);
+    EXPECT_EQ(1, r[1]);
+
+    // That st_destroy cleaned up only its own start, so Winsock still works here.
+    EXPECT_TRUE(winsock_test_usable());
+
+    // The last st_destroy cleans up the last start, so Winsock stops: st_init and st_destroy are balanced.
+    st_destroy();
+    int wsaerr = 0;
+    EXPECT_FALSE(winsock_test_usable(&wsaerr));
+    EXPECT_EQ(WSANOTINITIALISED, wsaerr);
+
+    if (!::testing::Test::HasFailure()) {
+        fflush(stdout);
+        fflush(stderr);
+        _exit(WINSOCK_TEST_CHILD_OK);
+    }
+}
+
+// st_init starts Winsock and st_destroy cleans it up, once per OS thread's ST, like SRS calling srs_st_destroy at exit.
+VOID TEST(WinsockTest, InitStartsAndDestroyCleansUp)
+{
+    EXPECT_EQ(WINSOCK_TEST_CHILD_OK, winsock_test_run_child("WinsockTest.DISABLED_ChildInitAndDestroy"));
 }
 #endif

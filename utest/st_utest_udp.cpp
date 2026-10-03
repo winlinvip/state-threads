@@ -54,12 +54,12 @@ static bool io_udp_socket(IoTestUdpSocket& s)
 
     socklen_t addrlen = sizeof(s.addr_);
     if (::bind(fd, (sockaddr*)&s.addr_, sizeof(s.addr_)) < 0 || getsockname(fd, (sockaddr*)&s.addr_, &addrlen) < 0) {
-        ::close(fd);
+        st_utest_close(fd);
         return false;
     }
 
     s.stfd_ = st_netfd_open_socket(fd);
-    if (!s.stfd_) ::close(fd);
+    if (!s.stfd_) st_utest_close(fd);
     return s.stfd_ != NULL;
 }
 

@@ -334,6 +334,7 @@ void _st_stack_free(_st_stack_t *ts);
 int _st_io_init(void);
 #if defined(WIN64)
 int _st_win64_errno(int wsaerr, int connecting);
+void _st_io_destroy(void);
 #endif
 
 st_utime_t st_utime(void);

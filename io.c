@@ -281,11 +281,43 @@ static void _st_netfd_free_aux_data(_st_netfd_t *fd);
  */
 #define _ST_WIN64_OSFD_LIMIT (1 << 24)
 
+/* Whether this thread's st_init started Winsock, which st_destroy cleans up. */
+static __thread int _st_wsa_started = 0;
+
 int _st_io_init(void)
 {
-    int fdlim = (*_st_eventsys->fd_getlimit)();
+    int fdlim;
+
+    /*
+     * Winsock needs WSAStartup before any socket call. It counts the starts, so each
+     * thread's ST starts it once and st_destroy cleans up that start.
+     */
+    if (!_st_wsa_started) {
+        WSADATA wsa;
+        int err = WSAStartup(MAKEWORD(2, 2), &wsa);
+        if (err != 0) {
+            errno = _st_win64_errno(err, 0);
+            return -1;
+        }
+        if (LOBYTE(wsa.wVersion) != 2 || HIBYTE(wsa.wVersion) != 2) {
+            WSACleanup();
+            errno = EINVAL;
+            return -1;
+        }
+        _st_wsa_started = 1;
+    }
+
+    fdlim = (*_st_eventsys->fd_getlimit)();
     _st_osfd_limit = (fdlim > 0 && fdlim < _ST_WIN64_OSFD_LIMIT) ? fdlim : _ST_WIN64_OSFD_LIMIT;
     return 0;
+}
+
+void _st_io_destroy(void)
+{
+    if (_st_wsa_started) {
+        WSACleanup();
+        _st_wsa_started = 0;
+    }
 }
 #else
 int _st_io_init(void)

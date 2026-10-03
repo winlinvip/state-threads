@@ -353,8 +353,8 @@ struct EventTestTcpPair {
     EventTestTcpPair() : server_(-1), client_(-1) {
     }
     ~EventTestTcpPair() {
-        if (server_ >= 0) ::close(server_);
-        if (client_ >= 0) ::close(client_);
+        if (server_ >= 0) st_utest_close(server_);
+        if (client_ >= 0) st_utest_close(client_);
     }
 };
 
@@ -372,7 +372,7 @@ static int event_test_accept_from(int lfd, int cfd)
         if (sfd < 0 || (peer.sin_port == local.sin_port && peer.sin_addr.s_addr == local.sin_addr.s_addr)) {
             return sfd;
         }
-        ::close(sfd);
+        st_utest_close(sfd);
     }
 }
 
@@ -390,18 +390,18 @@ static bool event_test_tcp_pair(EventTestTcpPair& pair)
     socklen_t addrlen = sizeof(addr);
     if (::bind(lfd, (sockaddr*)&addr, sizeof(addr)) < 0 || ::listen(lfd, 1) < 0
         || getsockname(lfd, (sockaddr*)&addr, &addrlen) < 0) {
-        ::close(lfd);
+        st_utest_close(lfd);
         return false;
     }
 
     pair.client_ = socket(AF_INET, SOCK_STREAM, 0);
     if (pair.client_ < 0 || ::connect(pair.client_, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        ::close(lfd);
+        st_utest_close(lfd);
         return false;
     }
 
     pair.server_ = event_test_accept_from(lfd, pair.client_);
-    ::close(lfd);
+    st_utest_close(lfd);
     return pair.server_ >= 0;
 }
 

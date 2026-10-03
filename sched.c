@@ -237,6 +237,10 @@ int st_init(void)
 void st_destroy(void)
 {
     (*_st_eventsys->destroy)();
+#if defined(WIN64)
+    /* Clean up Winsock, which st_init started. */
+    _st_io_destroy();
+#endif
 }
 
 

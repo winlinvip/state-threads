@@ -50,8 +50,8 @@ jobs:
           files: coverage.xml
           disable_search: true
 
-  # Native Windows with MSVC, built with GNU make from Git Bash. Build only: st_utest
-  # cannot run until the context switch and the event system are ported.
+  # Native Windows with MSVC, built with GNU make from Git Bash. st_utest runs without
+  # the socket tests until the event system and I/O are ported.
   windows:
     name: actions-test-build-win64
     runs-on: windows-latest
@@ -89,6 +89,32 @@ jobs:
           command -v make cl ml64 lib
           make win64-debug-utest
           test -f obj/st_utest.exe
+
+      ################################################################
+      # Tests
+      - name: Run ST utest
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          # Socket I/O is not ported to Windows yet, so skip the tests that need sockets.
+          # Remove this filter when the Windows event system and I/O are ported.
+          skip=(
+            'IoAcceptTest.*' 'IoConnectTest.*' 'IoNetfdTest.*' 'IoReadTest.*' 'IoWriteTest.*'
+            'IoUdpTest.*' 'IoUdpMsgTest.*' 'PollTest.*' 'PollPriTest.*' 'TcpTest.*'
+            'EpollWorkflowTest.*'
+            'InitTest.SecondInitKeepsWaitingCoroutines'
+            'InterruptTest.StopReaderWithQueuedData'
+            'TimeoutHeapTest.EarlyWakeKeepsOthersOnTime'
+            'LearnKB.BasicNetfdReadTimeout' 'LearnKB.BasicNetfdWriteThenRead'
+            'LearnKB.NetfdFreeKeepsOsfdOpen' 'LearnKB.NetfdSpecificAndDestructorOnClose'
+          )
+          ./obj/st_utest.exe --gtest_filter="-$(IFS=:; echo "${skip[*]}")"
+
+      ################################################################
+      # Build
+      - name: Build optimized ST with MSVC
+        shell: bash
+        run: |
           make win64-optimized
           test -f obj/libst.a
 

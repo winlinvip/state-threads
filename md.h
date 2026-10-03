@@ -232,6 +232,20 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
             (_t)->context[0].__jmpbuf[11] = (long long)(intptr_t)(_bottom); \
             (_t)->context[0].__jmpbuf[12] = (long long)(intptr_t)(_bottom); \
         } while (0)
+        /*
+         * A new thread starts in _st_md_thread_start (md_win64.asm), which calls _st_thread_main,
+         * instead of after _st_md_cxt_save in st_thread_create, so it does not depend on how the
+         * compiler uses that frame and its registers there. The SP (slot 8) moves 16-byte aligned
+         * minus 8 to a null return address, as at a function entry, and the PC (slot 9) is set.
+         */
+        extern void _st_md_thread_start(void);
+        #define MD_INIT_THREAD_ENTRY(_t) do {                                       \
+            char *_sp = (char *)(intptr_t)MD_GET_SP(_t);                            \
+            _sp = (char *)((intptr_t)_sp & ~(intptr_t)15) - sizeof(void *);         \
+            *(void **)_sp = NULL;                                                   \
+            MD_GET_SP(_t) = (long long)(intptr_t)_sp;                               \
+            (_t)->context[0].__jmpbuf[9] = (long long)(intptr_t)_st_md_thread_start; \
+        } while (0)
     #else
         #error Unknown CPU architecture
     #endif

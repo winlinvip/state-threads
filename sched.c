@@ -682,6 +682,10 @@ _st_thread_t *st_thread_create(void *(*start)(void *arg), void *arg, int joinabl
     /* Set the stack bounds the OS keeps for the new thread, such as the TIB on Windows. */
     MD_INIT_STACK_BOUNDS(thread, stack->stk_bottom, stack->stk_top);
 #endif
+#ifdef MD_INIT_THREAD_ENTRY
+    /* Start the new thread in an assembly entry that calls _st_thread_main, not after the save above. */
+    MD_INIT_THREAD_ENTRY(thread);
+#endif
 
     /* If thread is joinable, allocate a termination condition variable */
     if (joinable) {

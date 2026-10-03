@@ -118,4 +118,22 @@ _st_md_cxt_restore PROC
     jmp r8
 _st_md_cxt_restore ENDP
 
+EXTERN _st_thread_main:PROC
+
+; void _st_md_thread_start(void), the entry of a new thread, never returns.
+; MD_INIT_THREAD_ENTRY in md.h points the PC of the new thread's jmpbuf here, and its SP at a
+; null return address, 8 mod 16 as at any function entry, so _st_md_cxt_restore enters this
+; function as if called from address 0, which ends stack walks. The thread no longer resumes
+; after _st_md_cxt_save in st_thread_create, so it does not depend on how the compiler uses
+; that frame or its registers after save returns twice (/Od, /O2, /GL).
+_st_md_thread_start PROC FRAME
+    ; The 32-byte home space for the callee, and 8 bytes to align rsp to 16 at the call.
+    sub rsp, 40
+    .allocstack 40
+    .endprolog
+    call _st_thread_main
+    ; _st_thread_main calls st_thread_exit, which never returns.
+    int 3
+_st_md_thread_start ENDP
+
 END

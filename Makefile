@@ -226,6 +226,11 @@ endif
 # or enable support for asan:
 # make EXTRA_CFLAGS="-DMD_ASAN -fsanitize=address -fno-omit-frame-pointer"
 #
+# or enable support for asan on native Windows with MSVC, whose asan runtime has
+# the fiber API that MD_ASAN uses (-fsanitize-address-use-after-return reports
+# false positives with MSVC 14.44, even in a program without ST):
+# make win64-debug-utest EXTRA_CFLAGS="-DMD_ASAN -fsanitize=address" UTEST_FLAGS=-fsanitize=address
+#
 # or to disable the clock_gettime for MacOS before 10.12, see https://github.com/ossrs/srs/issues/3978
 # make EXTRA_CFLAGS=-DMD_OSX_NO_CLOCK_GETTIME
 #

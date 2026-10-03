@@ -300,11 +300,16 @@ extern void* _st_primordial_stack_bottom;
 extern size_t _st_primordial_stack_size;
 }
 
-#ifndef _WIN32 // POSIX only: pthread stack attributes
 // The stack of the calling OS thread, from its lowest to its highest address.
 static void stack_test_thread_stack(char** bottom, char** top)
 {
-#ifdef __APPLE__
+#if defined(_WIN32)
+    // The whole reserved stack, from the TIB's DeallocationStack up to its StackBase.
+    ULONG_PTR low = 0, high = 0;
+    GetCurrentThreadStackLimits(&low, &high);
+    *bottom = (char*)low;
+    *top = (char*)high;
+#elif defined(__APPLE__)
     pthread_t self = pthread_self();
     *top = (char*)pthread_get_stackaddr_np(self);
     *bottom = *top - pthread_get_stacksize_np(self);
@@ -366,4 +371,3 @@ VOID TEST(PrimordialStackTest, DescribesTheMainThreadStack)
 
     st_set_primordial_stack((char*)saved_bottom + saved_size, saved_bottom);
 }
-#endif

@@ -42,17 +42,105 @@
  */
 
 #include <stdlib.h>
+#if !defined(WIN64)
 #include <unistd.h>
+#endif
 #include <sys/types.h>
+#if !defined(WIN64)
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#endif
 #include <fcntl.h>
 #include <signal.h>
 #include <errno.h>
 #include "common.h"
+
+#if defined(WIN64)
+/*
+ * Native Windows stubs for the POSIX-only calls, so ST links. They fail with
+ * ENOSYS until the Windows I/O is ported. Winsock provides accept, connect,
+ * getsockopt, recvfrom, and sendto, so the library brings ws2_32.lib.
+ */
+#pragma comment(lib, "ws2_32.lib")
+
+/* Only for the fcntl stub; the CRT has no such flags. */
+#define F_GETFL     3
+#define F_SETFL     4
+#define O_NONBLOCK  04000
+
+static int _st_win64_enosys(void)
+{
+    errno = ENOSYS;
+    return -1;
+}
+
+static int _st_win64_ioctl(int fd, unsigned long request, int *arg)
+{
+    (void) fd; (void) request; (void) arg;
+    return _st_win64_enosys();
+}
+
+static int _st_win64_fcntl(int fd, int cmd, int arg)
+{
+    (void) fd; (void) cmd; (void) arg;
+    return _st_win64_enosys();
+}
+
+static int _st_win64_close(int fd)
+{
+    (void) fd;
+    return _st_win64_enosys();
+}
+
+static ssize_t _st_win64_read(int fd, void *buf, size_t nbyte)
+{
+    (void) fd; (void) buf; (void) nbyte;
+    return _st_win64_enosys();
+}
+
+static ssize_t _st_win64_write(int fd, const void *buf, size_t nbyte)
+{
+    (void) fd; (void) buf; (void) nbyte;
+    return _st_win64_enosys();
+}
+
+static ssize_t _st_win64_readv(int fd, const struct iovec *iov, int iov_size)
+{
+    (void) fd; (void) iov; (void) iov_size;
+    return _st_win64_enosys();
+}
+
+static ssize_t _st_win64_writev(int fd, const struct iovec *iov, int iov_size)
+{
+    (void) fd; (void) iov; (void) iov_size;
+    return _st_win64_enosys();
+}
+
+static int _st_win64_recvmsg(int fd, struct msghdr *msg, int flags)
+{
+    (void) fd; (void) msg; (void) flags;
+    return _st_win64_enosys();
+}
+
+static int _st_win64_sendmsg(int fd, const struct msghdr *msg, int flags)
+{
+    (void) fd; (void) msg; (void) flags;
+    return _st_win64_enosys();
+}
+
+#define ioctl       _st_win64_ioctl
+#define fcntl       _st_win64_fcntl
+#define close       _st_win64_close
+#define read        _st_win64_read
+#define write       _st_win64_write
+#define readv       _st_win64_readv
+#define writev      _st_win64_writev
+#define recvmsg     _st_win64_recvmsg
+#define sendmsg     _st_win64_sendmsg
+#endif
 
 // Global stat.
 #if defined(DEBUG) && defined(DEBUG_STATS)
@@ -87,6 +175,13 @@ static int _st_osfd_limit = -1;
 
 static void _st_netfd_free_aux_data(_st_netfd_t *fd);
 
+#if defined(WIN64)
+/* Windows has no SIGPIPE or rlimit; fail until the Windows I/O is ported. */
+int _st_io_init(void)
+{
+    return _st_win64_enosys();
+}
+#else
 int _st_io_init(void)
 {
     struct sigaction sigact;
@@ -126,6 +221,7 @@ int _st_io_init(void)
 
     return 0;
 }
+#endif
 
 
 int st_getfdlimit(void)
@@ -736,6 +832,15 @@ int st_sendmsg(_st_netfd_t *fd, const struct msghdr *msg, int flags, st_utime_t 
 /*
  * To open FIFOs or other special files.
  */
+#if defined(WIN64)
+/* Not supported on Windows yet. */
+_st_netfd_t *st_open(const char *path, int oflags, mode_t mode)
+{
+    (void) path; (void) oflags; (void) mode;
+    _st_win64_enosys();
+    return NULL;
+}
+#else
 _st_netfd_t *st_open(const char *path, int oflags, mode_t mode)
 {
     int osfd, err;
@@ -758,3 +863,4 @@ _st_netfd_t *st_open(const char *path, int oflags, mode_t mode)
     return newfd;
 }
 
+#endif

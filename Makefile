@@ -141,6 +141,7 @@ endif
 # Bash or PowerShell with the MSVC environment on PATH. Static library only.
 # Git Bash 'ln -s' copies instead of linking, so obj is a directory junction.
 ifeq ($(OS), WIN64)
+EXTRA_OBJS  = $(TARGETDIR)/md_win64.o
 CC          = cl
 CXX         = cl
 AR          = lib

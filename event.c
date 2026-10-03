@@ -35,7 +35,9 @@
  */
 
 #include <stdlib.h>
+#if !defined(WIN64)
 #include <unistd.h>
+#endif
 #include <fcntl.h>
 #include <string.h>
 #include <time.h>
@@ -57,7 +59,7 @@ __thread unsigned long long _st_stat_epoll_shake = 0;
 __thread unsigned long long _st_stat_epoll_spin = 0;
 #endif
 
-#if !defined(MD_HAVE_KQUEUE) && !defined(MD_HAVE_EPOLL) && !defined(MD_HAVE_SELECT)
+#if !defined(MD_HAVE_KQUEUE) && !defined(MD_HAVE_EPOLL) && !defined(MD_HAVE_SELECT) && !defined(WIN64)
     #error Only support epoll(for Linux), kqueue(for Darwin) or select(for Cygwin)
 #endif
 
@@ -1247,6 +1249,77 @@ static _st_eventsys_t _st_epoll_eventsys = {
 #endif  /* MD_HAVE_EPOLL */
 
 
+#if defined (WIN64)
+/*****************************************
+ * Native Windows event system stub, so ST links. Every operation fails with
+ * ENOSYS until a Windows event system is ported.
+ */
+#include <stdio.h>
+
+ST_HIDDEN int _st_win64_init(void)
+{
+    errno = ENOSYS;
+    return -1;
+}
+
+ST_HIDDEN void _st_win64_dispatch(void)
+{
+    fprintf(stderr, "ST: the Windows event system is not ported yet\n");
+    abort();
+}
+
+ST_HIDDEN int _st_win64_pollset_add(struct pollfd *pds, int npds)
+{
+    (void) pds;
+    (void) npds;
+    errno = ENOSYS;
+    return -1;
+}
+
+ST_HIDDEN void _st_win64_pollset_del(struct pollfd *pds, int npds)
+{
+    (void) pds;
+    (void) npds;
+}
+
+ST_HIDDEN int _st_win64_fd_new(int osfd)
+{
+    (void) osfd;
+    errno = ENOSYS;
+    return -1;
+}
+
+ST_HIDDEN int _st_win64_fd_close(int osfd)
+{
+    (void) osfd;
+    errno = ENOSYS;
+    return -1;
+}
+
+ST_HIDDEN int _st_win64_fd_getlimit(void)
+{
+    return 0;
+}
+
+ST_HIDDEN void _st_win64_destroy(void)
+{
+}
+
+static _st_eventsys_t _st_win64_eventsys = {
+    "win64-stub",
+    ST_EVENTSYS_DEFAULT,
+    _st_win64_init,
+    _st_win64_dispatch,
+    _st_win64_pollset_add,
+    _st_win64_pollset_del,
+    _st_win64_fd_new,
+    _st_win64_fd_close,
+    _st_win64_fd_getlimit,
+    _st_win64_destroy
+};
+#endif  /* WIN64 */
+
+
 /*****************************************
  * Public functions
  */
@@ -1257,6 +1330,13 @@ int st_set_eventsys(int eventsys)
         errno = EBUSY;
         return -1;
     }
+
+#if defined (WIN64)
+    if (eventsys == ST_EVENTSYS_DEFAULT) {
+        _st_eventsys = &_st_win64_eventsys;
+        return 0;
+    }
+#endif
 
     if (eventsys == ST_EVENTSYS_SELECT || eventsys == ST_EVENTSYS_DEFAULT) {
 #if defined (MD_HAVE_SELECT)

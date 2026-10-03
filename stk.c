@@ -45,7 +45,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#if !defined(WIN64)
 #include <sys/mman.h>
+#endif
 #include "common.h"
 
 

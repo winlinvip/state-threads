@@ -50,8 +50,8 @@ jobs:
           files: coverage.xml
           disable_search: true
 
-  # Native Windows with MSVC, built with GNU make from Git Bash. st_utest runs without
-  # the few tests that Windows TCP behavior still fails.
+  # Native Windows with MSVC, built with GNU make from Git Bash. st_utest skips the few
+  # tests that Windows TCP behavior cannot pass, in the test code itself.
   windows:
     name: actions-test-build-win64
     runs-on: windows-latest
@@ -95,18 +95,7 @@ jobs:
       - name: Run ST utest
         shell: bash
         timeout-minutes: 10
-        run: |
-          # Windows accepts a whole non-blocking send larger than SO_SNDBUF, so these writes
-          # do not wait for the reader, and it retries the SYN after a refusal for about two
-          # seconds. Remove this filter when those tests pass on Windows.
-          skip=(
-            'IoConnectTest.ConnectRefusedWhenNobodyListens'
-            'IoWriteTest.WriteWaitsForSlowPlayer' 'IoWriteTest.WriteFailsWhenPlayerResetsMidStream'
-            'IoWriteTest.WritevWaitsForSlowPlayer' 'IoWriteTest.WritevWaitsForSlowPlayerWithMergedWrite'
-            'IoWriteTest.WritevFailsWhenPlayerResetsMidStream' 'IoWriteTest.WritevTimesOutAndLosesTheSentCount'
-            'IoWriteTest.WritevInterruptedWhenConnectionStops' 'IoWriteTest.WritevResidResumesAfterTimeout'
-          )
-          ./obj/st_utest.exe --gtest_filter="-$(IFS=:; echo "${skip[*]}")"
+        run: ./obj/st_utest.exe
 
       ################################################################
       # Build

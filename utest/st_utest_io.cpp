@@ -37,6 +37,10 @@
 #define ST_UTIME_MILLISECONDS 1000
 #define ST_UTEST_TIMEOUT (100 * ST_UTIME_MILLISECONDS)
 
+#ifdef _MSC_VER // Windows only: some tests skip with GTEST_SKIP, so the rest of their body is unreachable
+#pragma warning(disable: 4702)
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // The utest for reading a TCP stream, the way SRS reads every RTMP chunk header and payload with st_read_fully.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -932,6 +936,9 @@ static st_netfd_t io_tcp_socket(int family)
 // report the same error. The test takes a free port by opening a listener and closing it. Locks in current behavior.
 VOID TEST(IoConnectTest, ConnectRefusedWhenNobodyListens)
 {
+#ifdef _WIN32 // Windows only: skipped, Windows retries a refused connect for about 2 s, longer than the timeout
+    GTEST_SKIP() << "Windows retries a refused connect for about 2 seconds";
+#endif
     struct sockaddr_in addr;
     st_netfd_t listener = io_tcp_listen(addr, 8);
     ASSERT_TRUE(listener != NULL);
@@ -1104,6 +1111,25 @@ static bool io_shrink_send_buffer(IoTestTcpPair& pair)
     return setsockopt(st_netfd_fileno(pair.server_), SOL_SOCKET, SO_SNDBUF, &size, sizeof(size)) == 0;
 }
 
+#ifdef _WIN32 // Windows only: a large send does not wait
+// Windows takes a whole non-blocking send, however large, while the send buffer holds less than SO_SNDBUF, so a
+// single large write to a slow player never waits; the wait starts from the next write. So on Windows the tests first
+// fill the send and receive buffers, and the write under test waits, times out, or sees the reset as on POSIX.
+// Winsock never sends part of a non-blocking send: it takes the whole buffer, or fails with WSAEWOULDBLOCK and sends
+// nothing. So the tests that need a partial count are skipped on Windows; the wait and retry after a would-block is
+// covered by the tests that fill the buffers first.
+static bool io_fill_buffers(int fd, std::string& filled);
+
+// Fill the buffers of the server end. The fill sleeps outside ST, so let ST read its clock again after it, or a timeout
+// set right after would start from the old clock and expire early.
+static bool io_fill_send_buffer(IoTestTcpPair& pair, std::string& filled)
+{
+    bool ok = io_fill_buffers(st_netfd_fileno(pair.server_), filled);
+    st_usleep(0);
+    return ok;
+}
+#endif
+
 // Messages as SRS sends them: each one is a 12-byte header iovec and a payload iovec. Both point into one byte
 // pattern that doesn't repeat at buffer boundaries, so the player can compare what it got with data_, and a byte that
 // is lost, sent twice or sent out of order shows up.
@@ -1189,6 +1215,9 @@ VOID TEST(IoWriteTest, WritevSendsMessageInOneCall)
 // byte is sent, in order. The player has to start reading before st_writev can return. Locks in current behavior.
 VOID TEST(IoWriteTest, WritevWaitsForSlowPlayer)
 {
+#ifdef _WIN32 // Windows only: skipped, the test needs a partial send, which Winsock never does
+    GTEST_SKIP() << "Winsock never sends part of a non-blocking send";
+#endif
     IoTestTcpPair pair;
     ASSERT_TRUE(io_tcp_pair(pair));
     ASSERT_TRUE(io_shrink_send_buffer(pair));
@@ -1210,6 +1239,9 @@ VOID TEST(IoWriteTest, WritevWaitsForSlowPlayer)
 // and frees it when done. Every byte still arrives in order. Locks in current behavior.
 VOID TEST(IoWriteTest, WritevWaitsForSlowPlayerWithMergedWrite)
 {
+#ifdef _WIN32 // Windows only: skipped, the test needs a partial send, which Winsock never does
+    GTEST_SKIP() << "Winsock never sends part of a non-blocking send";
+#endif
     IoTestTcpPair pair;
     ASSERT_TRUE(io_tcp_pair(pair));
     ASSERT_TRUE(io_shrink_send_buffer(pair));
@@ -1250,6 +1282,10 @@ VOID TEST(IoWriteTest, WritevFailsWhenPlayerResetsMidStream)
     IoTestTcpPair pair;
     ASSERT_TRUE(io_tcp_pair(pair));
     ASSERT_TRUE(io_shrink_send_buffer(pair));
+#ifdef _WIN32 // Windows only: fill the buffers, or the write does not wait
+    std::string filled;
+    ASSERT_TRUE(io_fill_send_buffer(pair, filled));
+#endif
 
     IoTestMessages msgs(4, 256 * 1024);
     IoTestBlockedWriter w;
@@ -1274,6 +1310,9 @@ VOID TEST(IoWriteTest, WritevFailsWhenPlayerResetsMidStream)
 // behavior.
 VOID TEST(IoWriteTest, WritevTimesOutAndLosesTheSentCount)
 {
+#ifdef _WIN32 // Windows only: skipped, the test needs a partial send, which Winsock never does
+    GTEST_SKIP() << "Winsock never sends part of a non-blocking send";
+#endif
     IoTestTcpPair pair;
     ASSERT_TRUE(io_tcp_pair(pair));
     ASSERT_TRUE(io_shrink_send_buffer(pair));
@@ -1295,6 +1334,10 @@ VOID TEST(IoWriteTest, WritevInterruptedWhenConnectionStops)
     IoTestTcpPair pair;
     ASSERT_TRUE(io_tcp_pair(pair));
     ASSERT_TRUE(io_shrink_send_buffer(pair));
+#ifdef _WIN32 // Windows only: fill the buffers, or the write does not wait
+    std::string filled;
+    ASSERT_TRUE(io_fill_send_buffer(pair, filled));
+#endif
 
     IoTestMessages msgs(4, 256 * 1024);
     IoTestBlockedWriter w;
@@ -1584,6 +1627,9 @@ VOID TEST(IoWriteTest, SendmsgRetriesWhenSignalInterruptsSystemCall)
 // order. Locks in current behavior.
 VOID TEST(IoWriteTest, WritevResidResumesAfterTimeout)
 {
+#ifdef _WIN32 // Windows only: skipped, the test needs a partial send, which Winsock never does
+    GTEST_SKIP() << "Winsock never sends part of a non-blocking send";
+#endif
     IoTestTcpPair pair;
     ASSERT_TRUE(io_tcp_pair(pair));
     ASSERT_TRUE(io_shrink_send_buffer(pair));
@@ -1652,6 +1698,9 @@ VOID TEST(IoWriteTest, WritevWithNothingToSendReturnsAtOnce)
 // current behavior.
 VOID TEST(IoWriteTest, WriteWaitsForSlowPlayer)
 {
+#ifdef _WIN32 // Windows only: skipped, the test needs a partial send, which Winsock never does
+    GTEST_SKIP() << "Winsock never sends part of a non-blocking send";
+#endif
     IoTestTcpPair pair;
     ASSERT_TRUE(io_tcp_pair(pair));
     ASSERT_TRUE(io_shrink_send_buffer(pair));
@@ -1685,6 +1734,10 @@ VOID TEST(IoWriteTest, WriteFailsWhenPlayerResetsMidStream)
     IoTestTcpPair pair;
     ASSERT_TRUE(io_tcp_pair(pair));
     ASSERT_TRUE(io_shrink_send_buffer(pair));
+#ifdef _WIN32 // Windows only: fill the buffers, or the write does not wait
+    std::string filled;
+    ASSERT_TRUE(io_fill_send_buffer(pair, filled));
+#endif
 
     IoTestMessages msgs(1, 1024 * 1024);
     IoTestBlockedWriter w;

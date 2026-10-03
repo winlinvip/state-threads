@@ -86,13 +86,40 @@ Get code:
 git clone -b srs https://github.com/ossrs/state-threads.git
 ```
 
+Native Windows x64 builds with the Visual Studio (MSVC) toolchain, `cl`, `ml64`, and `lib`, through GNU make
+and the same Makefile. There is no Cygwin, MinGW, WSL, or POSIX emulation layer: GNU make and Git Bash only
+run the build, and the output is the static library `obj/libst.a` built by MSVC. It needs Windows 10 1809 or
+Windows Server 2019 or later, x64.
+
+Install the build tools:
+
+* Visual Studio 2022, or its Build Tools, with the MSVC x64 tools (the "Desktop development with C++" workload).
+* [Git for Windows](https://git-scm.com/download/win), for Git Bash.
+* GNU make, for example `winget install ezwinports.make` or `choco install make`.
+
+Open the `x64 Native Tools Command Prompt for VS 2022`, which runs `vcvars64.bat` and puts `cl`, `ml64`, and
+`lib` on `PATH`, then start Git Bash in it:
+
+```
+"C:\Program Files\Git\bin\bash.exe"
+```
+
+For Windows, build the debug or the optimized library:
+
+```bash
+make win64-debug
+make win64-optimized
+```
+
+> Note: Programs that include `st.h` must include it before `windows.h`, or define `WIN32_LEAN_AND_MEAN`. The
+> library links `ws2_32.lib` by itself. For what works differently on Windows, read the
+> [porting notes](docs/notes.html#windows).
+
 For Cygwin(Windows):
 
 ```
 make cygwin64-debug
 ```
-
-> Remark: Windows native build is unsupported right now.
 
 ## Branch SRS
 
@@ -147,6 +174,36 @@ To make ST with utest and run it:
 ```bash
 make darwin-debug-utest && ./obj/st_utest
 ```
+
+## Windows: UTest
+
+> Note: We use [Google test](https://github.com/google/googletest/releases/tag/release-1.11.0) in `utest/gtest-fit`.
+
+To make ST with utest and run it, in Git Bash with the MSVC environment (see [Windows: Usage](#windows-usage)):
+
+```bash
+make win64-debug-utest && ./obj/st_utest.exe
+```
+
+The tests that need POSIX features (fork, signals, pipes, files) are not built on Windows, and a few are
+skipped with a reason, for example the write tests that need a partial send, which Winsock never does.
+
+With MSVC ASAN, whose runtime has the fiber API that `MD_ASAN` uses:
+
+```bash
+make win64-debug-utest EXTRA_CFLAGS="-DMD_ASAN -fsanitize=address" UTEST_FLAGS=-fsanitize=address && ./obj/st_utest.exe
+```
+
+To debug in Visual Studio, generate a solution with CMake, which comes with Visual Studio, from the
+`x64 Native Tools Command Prompt for VS 2022`, then open `C:\st-build\st.sln`:
+
+```
+cmake -S cmake -B C:\st-build -G "Visual Studio 17 2022" -A x64
+cmake --build C:\st-build --config Debug --target st_utest
+```
+
+> Note: Use a short build directory, because MSBuild fails when its paths are too long. The Makefile stays the
+> main build, and CMake also builds the `helloworld`, `jmpbuf`, `porting`, and `verify` tools.
 
 ## Linux: Coverage
 

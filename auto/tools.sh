@@ -54,7 +54,12 @@ fi
 for dir in "${tool_dirs[@]}"; do
     name=$(basename "$dir")
     # -W relinks the tool, because the binaries are shared across platforms and builds.
-    if ! out=$(make -C "$dir" -W "$name.c" LDFLAGS="$LDFLAGS" 2>&1); then
+    # A tool is C, <name>.c, or C++, <name>.cpp.
+    src=$name.c
+    if [[ -f $dir$name.cpp ]]; then
+        src=$name.cpp
+    fi
+    if ! out=$(make -C "$dir" -W "$src" LDFLAGS="$LDFLAGS" 2>&1); then
         echo "$out"
         echo "FAILED build $name"
         exit 1

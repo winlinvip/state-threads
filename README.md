@@ -234,6 +234,10 @@ support are skipped there, each with a comment: the partial writes on timeout in
 part of a non-blocking send), the `RLIMIT_NOFILE` checks in `lifecycle` and `stress`, reading back
 `O_NONBLOCK` in `poll`, and the `AF_UNIX` datagram echo and the `ENOENT` of a missing path in `unix`.
 
+The `exception` tool is C++: it throws and catches C++ exceptions on coroutine stacks, and on Windows also
+raises and catches SEH exceptions there. Windows builds C++ exceptions on SEH, which rejects frames outside
+the stack bounds in the TIB, so this works only because ST switches those bounds with each coroutine stack.
+
 ## Linux: Coverage
 
 > Note: We use [Google test](https://github.com/google/googletest/releases/tag/release-1.11.0) in `utest/gtest-fit`.

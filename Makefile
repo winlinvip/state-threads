@@ -113,8 +113,11 @@ EXTRA_OBJS  = $(TARGETDIR)/md_darwin.o
 LD          = cc
 SFLAGS      = -fPIC -fno-common
 DSO_SUFFIX  = dylib
+# The CPU to build for: CPU_ARCHS from the environment, such as x86_64 on Apple Silicon, or the host CPU.
+ifndef CPU_ARCHS
 CPU_ARCHS 	= $(shell g++ -dM -E - </dev/null |grep -q '__x86_64' && echo x86_64)
 CPU_ARCHS 	+= $(shell g++ -dM -E - </dev/null |grep -q '__aarch64' && echo arm64)
+endif
 CFLAGS      += -arch $(CPU_ARCHS)
 LDFLAGS     += -arch $(CPU_ARCHS)
 LDFLAGS     += -dynamiclib -install_name /sw/lib/libst.$(MAJOR).$(DSO_SUFFIX) -compatibility_version $(MAJOR) -current_version $(VERSION)

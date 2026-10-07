@@ -34,6 +34,14 @@ CXXFLAGS += -DGTEST_USE_OWN_TR1_TUPLE=1
 WARNFLAGS += -Wall -Wno-deprecated-declarations -Wno-unused-private-field -Wno-unused-command-line-argument
 endif
 
+# On macOS, the CPU to build for, from CPU_ARCHS in the environment as in ../Makefile, such as x86_64 on Apple
+# Silicon. The host CPU by default.
+ifeq ($(shell uname -s), Darwin)
+ifdef CPU_ARCHS
+CXXFLAGS += -arch $(CPU_ARCHS)
+endif
+endif
+
 # Whether ../obj/libst.a gets its stacks from malloc, as SRS builds it, from the EXTRA_CFLAGS of ../Makefile.
 CXXFLAGS += $(filter -DMALLOC_STACK,$(EXTRA_CFLAGS))
 

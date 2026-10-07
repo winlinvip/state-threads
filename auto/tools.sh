@@ -7,6 +7,8 @@
 #   LDFLAGS       passed to the tool link, such as -fsanitize=address
 #   ST_TOOL_RUN   the launcher of each tool, such as "qemu-riscv64 -L /usr/riscv64-linux-gnu" for a
 #                 cross build, as auto/qemu.sh sets it with CC and the rest of the toolchain
+#   CPU_ARCHS     on macOS, the CPU the Makefiles build for, such as x86_64 on Apple Silicon, run with
+#                 ST_TOOL_RUN="arch -x86_64", as auto/darwin.sh sets them
 #
 # Examples:
 #   ./auto/tools.sh

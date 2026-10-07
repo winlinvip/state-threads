@@ -7,8 +7,11 @@ OS_NAME 	= $(shell uname -s)
 ST_TARGET 	= linux-debug
 ifeq ($(OS_NAME), Darwin)
 ST_TARGET	= darwin-debug
+# The CPU to build for: CPU_ARCHS from the environment, such as x86_64 on Apple Silicon, or the host CPU.
+ifndef CPU_ARCHS
 CPU_ARCHS 	= $(shell $(CXX) -dM -E - </dev/null |grep -q '__x86_64' && echo x86_64)
 CPU_ARCHS 	+= $(shell $(CXX) -dM -E - </dev/null |grep -q '__aarch64' && echo arm64)
+endif
 CXXFLAGS    += -arch $(CPU_ARCHS)
 endif
 

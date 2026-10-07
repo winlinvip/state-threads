@@ -5,6 +5,8 @@
 # The build comes from the environment, empty by default:
 #   EXTRA_CFLAGS  passed to the library build, such as -DMALLOC_STACK
 #   LDFLAGS       passed to the tool link, such as -fsanitize=address
+#   ST_TOOL_RUN   the launcher of each tool, such as "qemu-riscv64 -L /usr/riscv64-linux-gnu" for a
+#                 cross build, as auto/qemu.sh sets it with CC and the rest of the toolchain
 #
 # Examples:
 #   ./auto/tools.sh
@@ -66,7 +68,7 @@ for dir in "${tool_dirs[@]}"; do
     fi
 
     for eventsys in select alt; do
-        if ! out=$(cd "$dir" && ST_TOOL_EVENTSYS=$eventsys "./$name$EXE" 2>&1); then
+        if ! out=$(cd "$dir" && ST_TOOL_EVENTSYS=$eventsys $ST_TOOL_RUN "./$name$EXE" 2>&1); then
             echo "$out"
             echo "FAILED $name $eventsys"
             exit 1

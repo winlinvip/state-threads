@@ -7,8 +7,8 @@ OS_NAME 	= $(shell uname -s)
 ST_TARGET 	= linux-debug
 ifeq ($(OS_NAME), Darwin)
 ST_TARGET	= darwin-debug
-CPU_ARCHS 	= $(shell g++ -dM -E - </dev/null |grep -q '__x86_64' && echo x86_64)
-CPU_ARCHS 	+= $(shell g++ -dM -E - </dev/null |grep -q '__aarch64' && echo arm64)
+CPU_ARCHS 	= $(shell $(CXX) -dM -E - </dev/null |grep -q '__x86_64' && echo x86_64)
+CPU_ARCHS 	+= $(shell $(CXX) -dM -E - </dev/null |grep -q '__aarch64' && echo arm64)
 CXXFLAGS    += -arch $(CPU_ARCHS)
 endif
 

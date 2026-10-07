@@ -46,11 +46,13 @@ VERSION     = 1.9.2
 # possible compilation options.
 ##########################
 
-CC          = cc
-CXX         = g++
-AR          = ar
-LD          = ld
-RANLIB      = ranlib
+# The toolchain and TARGETDIR come from the environment when it sets them, such as a cross
+# toolchain for another CPU, as auto/qemu.sh does.
+CC          ?= cc
+CXX         ?= g++
+AR          ?= ar
+LD          ?= ld
+RANLIB      ?= ranlib
 LN          = ln
 STATIC_ONLY = yes
 
@@ -58,7 +60,7 @@ SHELL       = /bin/sh
 ECHO        = /bin/echo
 
 BUILD       = DBG
-TARGETDIR   = $(OS)_$(shell uname -r)_$(BUILD)
+TARGETDIR   ?= $(OS)_$(shell uname -r)_$(BUILD)
 
 # For Cygwin, it pass a default OS env, we ignore it.
 ifeq ($(OS), Windows_NT)

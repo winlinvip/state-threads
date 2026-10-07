@@ -241,13 +241,14 @@ for them and run the utest and the tools with QEMU user mode, in Docker:
 
 The CPUs are `x86_64`, `aarch64`, `i386`, `arm`, `riscv64`, `loongarch64`, `mips`, `mipsel`, `mips64`, and
 `mips64el`. The second argument picks `utest`, `tools` (`auto/tools.sh`), `tools-malloc` (with
-`EXTRA_CFLAGS=-DMALLOC_STACK`), or `all`, the default. The script builds a local Docker image from
-`auto/qemu/Dockerfile` (Ubuntu 24.04, the cross compilers, and `qemu-user`) when it is missing. Its tag,
-`st-qemu:<hash>`, is a short hash of the files in `auto/qemu/`, so editing the Dockerfile builds a new image;
-the script then prints the `docker rmi` command for the older ones. It builds in place in
-`LINUX_<cpu>_qemu_DBG`, and prints one `RESULT <cpu> <run> PASS|FAIL` line per run. A CPU that is the
-container's own runs natively. QEMU is slower than the real CPU, and the few tests that qemu-user itself
-cannot run are skipped with a `SKIP` line.
+`EXTRA_CFLAGS=-DMALLOC_STACK`), `asan` (the utest and the tools with ASAN, in `LINUX_<cpu>_asan_DBG`), or
+`all`, the default. The script builds a local Docker image from `auto/qemu/Dockerfile` (Ubuntu 24.04, the cross
+compilers, and `qemu-user`) when it is missing. Its tag, `st-qemu:<hash>`, is a short hash of the files in
+`auto/qemu/`, so editing the Dockerfile builds a new image; the script then prints the `docker rmi` command for
+the older ones. It builds in place in `LINUX_<cpu>_qemu_DBG`, and prints one `RESULT <cpu> <run> PASS|FAIL`
+line per run. A CPU that is the container's own runs natively. On a Docker host of another CPU, such as Apple
+Silicon, `x86_64` runs in an amd64 container, `st-qemu:<hash>-amd64`, which Docker emulates as a whole. Every
+other CPU runs with qemu-user, which is slower than the real CPU, and skips `asan` with a `SKIP` line.
 
 On macOS, build and run for either CPU; on Apple Silicon, x86_64 runs under Rosetta 2:
 

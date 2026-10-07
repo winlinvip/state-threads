@@ -93,6 +93,11 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
  * Platform specifics
  */
 
+/*
+ * Each OS and CPU defines MD_GET_SP, MD_GET_PC and MD_GET_FP, the slots of the saved stack pointer, the
+ * address _st_md_cxt_restore jumps to, and the frame pointer, in the jmpbuf of a thread.
+ */
+
 #if defined (DARWIN)
 
     #define MD_USE_BSD_ANON_MMAP
@@ -101,8 +106,12 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
 
     #if defined(__amd64__) || defined(__x86_64__)
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[6]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[7]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
     #elif defined(__aarch64__)
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[13]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[11]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[10]))
     #else
         #error Unknown CPU architecture
     #endif
@@ -147,26 +156,42 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
 
     #if defined(__i386__)
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[4]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[5]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[3]))
     #elif defined(__amd64__) || defined(__x86_64__)
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[6]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[7]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
     #elif defined(__aarch64__)
         /* https://github.com/ossrs/state-threads/issues/9 */
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[13]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[11]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[10]))
     #elif defined(__arm__)
         /* https://github.com/ossrs/state-threads/issues/1#issuecomment-244648573 */
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[8]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[9]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[7]))
     #elif defined(__mips64)
         /* https://github.com/ossrs/state-threads/issues/21 */
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[0]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[11]))
     #elif defined(__mips__)
         /* https://github.com/ossrs/state-threads/issues/21 */
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[0]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[11]))
     #elif defined(__riscv)
         /* https://github.com/ossrs/state-threads/pull/28 */
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[0]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[2]))
     #elif defined(__loongarch64)
         /* https://github.com/ossrs/state-threads/issues/24 */
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[0]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[2]))
     #else
         #error "Unknown CPU architecture"
     #endif
@@ -180,6 +205,8 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
 
     #if defined(__amd64__) || defined(__x86_64__)
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[6]))
+        #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[7]))
+        #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
     #else
         #error Unknown CPU architecture
     #endif
@@ -212,6 +239,8 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
 
     #if defined(_M_X64) || defined(_M_AMD64)
         #define MD_GET_SP(_t) *((long long *)&((_t)->context[0].__jmpbuf[8]))
+        #define MD_GET_PC(_t) *((long long *)&((_t)->context[0].__jmpbuf[9]))
+        #define MD_GET_FP(_t) *((long long *)&((_t)->context[0].__jmpbuf[1]))
         /*
          * The TIB stack bounds of a new thread, restored from slots 10-12 by md_win64.asm:
          * StackBase is the stack top, StackLimit and DeallocationStack are the stack bottom.
@@ -227,7 +256,8 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
          * A new thread starts in _st_md_thread_start (md_win64.asm), which calls _st_thread_main,
          * instead of after _st_md_cxt_save in st_thread_create, so it does not depend on how the
          * compiler uses that frame and its registers there. The SP (slot 8) moves 16-byte aligned
-         * minus 8 to a null return address, as at a function entry, and the PC (slot 9) is set.
+         * minus 8 to a null return address, as at a function entry, the PC (slot 9) is set, and the
+         * frame pointer rbp (slot 1) is null, not the creator's.
          */
         extern void _st_md_thread_start(void);
         #define MD_INIT_THREAD_ENTRY(_t) do {                                       \
@@ -235,7 +265,8 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
             _sp = (char *)((intptr_t)_sp & ~(intptr_t)15) - sizeof(void *);         \
             *(void **)_sp = NULL;                                                   \
             MD_GET_SP(_t) = (long long)(intptr_t)_sp;                               \
-            (_t)->context[0].__jmpbuf[9] = (long long)(intptr_t)_st_md_thread_start; \
+            MD_GET_PC(_t) = (long long)(intptr_t)_st_md_thread_start;               \
+            MD_GET_FP(_t) = 0;                                                      \
         } while (0)
     #else
         #error Unknown CPU architecture

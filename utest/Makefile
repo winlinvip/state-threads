@@ -42,8 +42,9 @@ CXXFLAGS += -arch $(CPU_ARCHS)
 endif
 endif
 
-# Whether ../obj/libst.a gets its stacks from malloc, as SRS builds it, from the EXTRA_CFLAGS of ../Makefile.
-CXXFLAGS += $(filter -DMALLOC_STACK,$(EXTRA_CFLAGS))
+# Whether ../obj/libst.a gets its stacks from malloc, as SRS builds it, and whether it is an MD_ASAN build, which changes
+# the layout of _st_thread_t, from the EXTRA_CFLAGS of ../Makefile.
+CXXFLAGS += $(filter -DMALLOC_STACK -DMD_ASAN,$(EXTRA_CFLAGS))
 
 # House-keeping build targets.
 all : $(ST_DIR)/obj/st_utest$(EXE)

@@ -9,6 +9,10 @@
 #                 cross build, as auto/qemu.sh sets it with CC and the rest of the toolchain
 #   CPU_ARCHS     on macOS, the CPU the Makefiles build for, such as x86_64 on Apple Silicon, run with
 #                 ST_TOOL_RUN="arch -x86_64", as auto/darwin.sh sets them
+#   TARGETDIR     the build folder of the library, relative to the ST root, such as LINUX_riscv64_qemu_DBG, as
+#                 auto/qemu.sh sets it; each tool is then built and run in $TARGETDIR/tools/<name>, the obj link
+#                 is left alone, and builds for several CPUs can run at once. By default the library is in obj,
+#                 and each tool in tools/<name>.
 #
 # Examples:
 #   ./auto/tools.sh
@@ -57,7 +61,7 @@ fi
 
 for dir in "${tool_dirs[@]}"; do
     name=$(basename "$dir")
-    # -W relinks the tool, because the binaries are shared across platforms and builds.
+    # -W relinks the tool, because a binary is shared by builds with other flags, and in tools/<name> by platforms too.
     # A tool is C, <name>.c, or C++, <name>.cpp.
     src=$name.c
     if [[ -f $dir$name.cpp ]]; then
@@ -69,8 +73,13 @@ for dir in "${tool_dirs[@]}"; do
         exit 1
     fi
 
+    # The tool runs in the folder of its binary, as tools/tool.mk puts it.
+    bin_dir=$dir
+    if [[ -n $TARGETDIR ]]; then
+        bin_dir=$TARGETDIR/tools/$name
+    fi
     for eventsys in select alt; do
-        if ! out=$(cd "$dir" && ST_TOOL_EVENTSYS=$eventsys $ST_TOOL_RUN "./$name$EXE" 2>&1); then
+        if ! out=$(cd "$bin_dir" && ST_TOOL_EVENTSYS=$eventsys $ST_TOOL_RUN "./$name$EXE" 2>&1); then
             echo "$out"
             echo "FAILED $name $eventsys"
             exit 1

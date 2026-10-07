@@ -11,8 +11,9 @@
 #   tools-malloc  auto/tools.sh with EXTRA_CFLAGS=-DMALLOC_STACK
 #   all           all three, in that order, and every one runs even when another fails
 #
-# It exports CPU_ARCHS, which the Makefiles pass to -arch instead of the host CPU, and builds in place in
-# DARWIN_<cpu>_DBG, so the CPUs and the native build never share objects. Every binary runs with
+# It exports CPU_ARCHS, which the Makefiles pass to -arch instead of the host CPU, and TARGETDIR,
+# DARWIN_<cpu>_DBG, where it builds every output in place, the utest and the tools too, leaving the obj link
+# alone, so the CPUs and the native build never share objects. Every binary runs with
 # arch -<cpu>, which auto/tools.sh takes from ST_TOOL_RUN, so a binary built for the wrong CPU fails to start.
 #
 # It prints one line per run, "RESULT <cpu> <run> PASS|FAIL (<seconds>s)", with the log of a failed run
@@ -54,7 +55,7 @@ export ST_TOOL_RUN="arch -$CPU"
 run_utest() {
     make -B darwin-debug EXTRA_CFLAGS="$1" || return 1
     make -C utest EXTRA_CFLAGS="$1" || return 1
-    $ST_TOOL_RUN ./obj/st_utest
+    $ST_TOOL_RUN ./$TARGETDIR/st_utest
 }
 
 LOG=/tmp/st-darwin.log

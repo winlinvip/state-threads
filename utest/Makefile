@@ -5,6 +5,9 @@ ST_DIR = ..
 ST_UTEST = .
 # The main dir of gtest.
 GTEST_DIR = $(ST_UTEST)/gtest-fit/googletest
+# The dir of libst.a and of the utest objects and binary: TARGETDIR of ../Makefile when the environment or the command
+# line sets it, as auto/qemu.sh does, so builds for several CPUs can run at once in one checkout; obj by default.
+ST_OBJ_DIR = $(ST_DIR)/$(if $(TARGETDIR),$(TARGETDIR),obj)
 
 # The output flags of the compiler, archiver and linker, the executable suffix, and the libraries. WIN64 is native
 # Windows x64 with MSVC (cl, lib), as in ../Makefile; NOMINMAX keeps windows.h from defining min and max.
@@ -42,12 +45,12 @@ CXXFLAGS += -arch $(CPU_ARCHS)
 endif
 endif
 
-# Whether ../obj/libst.a gets its stacks from malloc, as SRS builds it, and whether it is an MD_ASAN build, which changes
+# Whether libst.a gets its stacks from malloc, as SRS builds it, and whether it is an MD_ASAN build, which changes
 # the layout of _st_thread_t, from the EXTRA_CFLAGS of ../Makefile.
 CXXFLAGS += $(filter -DMALLOC_STACK -DMD_ASAN,$(EXTRA_CFLAGS))
 
 # House-keeping build targets.
-all : $(ST_DIR)/obj/st_utest$(EXE)
+all : $(ST_OBJ_DIR)/st_utest$(EXE)
 
 # Auto-setup: symlink gtest-fit from SRS 3rdparty if not present.
 $(GTEST_DIR)/include/gtest/gtest.h:
@@ -62,7 +65,7 @@ $(GTEST_DIR)/include/gtest/gtest.h:
 	fi
 
 clean :
-	rm -f $(ST_DIR)/obj/st_utest* $(ST_DIR)/obj/gtest*
+	rm -f $(ST_OBJ_DIR)/st_utest* $(ST_OBJ_DIR)/gtest*
 
 # Usually you shouldn't tweak such internal variables, indicated by a
 # trailing _.
@@ -72,13 +75,13 @@ GTEST_SRCS_ = $(GTEST_DIR)/src/*.cc $(GTEST_DIR)/src/*.h $(GTEST_DIR)/include/gt
 # implementation details, the dependencies specified below are
 # conservative and not optimized.  This is fine as Google Test
 # compiles fast and for ordinary users its source rarely changes.
-$(ST_DIR)/obj/gtest-all.o : $(GTEST_DIR)/include/gtest/gtest.h $(GTEST_SRCS_)
+$(ST_OBJ_DIR)/gtest-all.o : $(GTEST_DIR)/include/gtest/gtest.h $(GTEST_SRCS_)
 	$(CXX) -c $(GTEST_DIR)/src/gtest-all.cc $(CXX_OUT)$@ \
         $(CXXFLAGS) $(UTEST_FLAGS) \
         $(WARNFLAGS) \
         -I$(GTEST_DIR)/include -I$(GTEST_DIR)
 
-$(ST_DIR)/obj/gtest.a : $(ST_DIR)/obj/gtest-all.o
+$(ST_OBJ_DIR)/gtest.a : $(ST_OBJ_DIR)/gtest-all.o
 	$(AR) $(ARFLAGS) $(AR_OUT)$@ $^
 
 #####################################################################################
@@ -88,7 +91,7 @@ $(ST_DIR)/obj/gtest.a : $(ST_DIR)/obj/gtest-all.o
 #####################################################################################
 
 # Depends, the depends objects
-ST_UTEST_DEPS = $(ST_DIR)/obj/libst.a
+ST_UTEST_DEPS = $(ST_OBJ_DIR)/libst.a
 
 # Depends, utest header files
 UTEST_DEPS = $(ST_UTEST)/st_utest.hpp Makefile
@@ -103,17 +106,17 @@ SOURCE_FILES = $(shell ls *.cpp)
 OBJECTS_FILES = $(patsubst %.cpp,%.o,$(SOURCE_FILES))
 #
 # Prefix object files to objects. For example:
-# 		($(ST_DIR)/obj/st_utest.o $(ST_DIR)/obj/st_utest_coroutines.o $(ST_DIR)/obj/st_utest_tcp.o)
-OBJECTS = $(addprefix $(ST_DIR)/obj/,$(OBJECTS_FILES))
+# 		($(ST_OBJ_DIR)/st_utest.o $(ST_OBJ_DIR)/st_utest_coroutines.o $(ST_OBJ_DIR)/st_utest_tcp.o)
+OBJECTS = $(addprefix $(ST_OBJ_DIR)/,$(OBJECTS_FILES))
 
 # Objects, build each object of utest
-$(ST_DIR)/obj/%.o : %.cpp $(ST_UTEST_DEPS) $(UTEST_DEPS) $(GTEST_DIR)/include/gtest/gtest.h
+$(ST_OBJ_DIR)/%.o : %.cpp $(ST_UTEST_DEPS) $(UTEST_DEPS) $(GTEST_DIR)/include/gtest/gtest.h
 	$(CXX) -c $< $(CXX_OUT)$@ \
         $(CXXFLAGS) $(UTEST_FLAGS) \
         $(WARNFLAGS) \
-        -I$(GTEST_DIR)/include -I$(ST_UTEST) -I$(ST_DIR) -I$(ST_DIR)/obj
+        -I$(GTEST_DIR)/include -I$(ST_UTEST) -I$(ST_DIR) -I$(ST_OBJ_DIR)
 
 # Generate the utest binary
-$(ST_DIR)/obj/st_utest$(EXE) : $(OBJECTS) $(ST_DIR)/obj/gtest.a $(ST_UTEST_DEPS)
+$(ST_OBJ_DIR)/st_utest$(EXE) : $(OBJECTS) $(ST_OBJ_DIR)/gtest.a $(ST_UTEST_DEPS)
 	$(CXX) $(LINK_OUT)$@ $(CXXFLAGS) $(UTEST_FLAGS) \
         $^ $(LIBS)

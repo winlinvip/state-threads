@@ -26,9 +26,11 @@
 # native g++ builds and runs x86_64 there, instead of qemu-x86_64, which crashes in pthread_getattr_np.
 #
 # In the container, it exports the toolchain, CC, CXX, AR, LD and RANLIB, which the Makefiles take from the
-# environment, and builds in place in LINUX_<cpu>_qemu_DBG, so the CPUs and the native Linux build never
-# share objects. A CPU that is the container's own runs natively; any other runs with qemu-<cpu> -L <sysroot>,
-# which auto/tools.sh takes from ST_TOOL_RUN.
+# environment, and TARGETDIR, LINUX_<cpu>_qemu_DBG. With TARGETDIR set, the Makefiles and auto/tools.sh build
+# everything in place in that folder, the library, the utest and the tools, and leave the obj link alone. So the
+# CPUs and the native Linux build never share objects, and two CPUs can run at once in one checkout. A CPU that
+# is the container's own runs natively; any other runs with qemu-<cpu> -L <sysroot>, which auto/tools.sh takes
+# from ST_TOOL_RUN.
 #
 # It prints one line per run, "RESULT <cpu> <run> PASS|FAIL (<seconds>s)", with the log of a failed run
 # before it, and exits 1 when any run failed.
@@ -47,7 +49,7 @@
 # port, then attach gdb-multiarch to it, with the sysroot for the shared libraries. For example, stop the
 # backtrace tool in the thread entry:
 #   ./auto/qemu.sh riscv64 shell
-#   make linux-debug && make -C tools/backtrace && cd tools/backtrace
+#   make linux-debug && make -C tools/backtrace && cd $TARGETDIR/tools/backtrace
 #   $ST_QEMU_USER -g 1234 -L $ST_QEMU_SYSROOT ./backtrace &
 #   gdb-multiarch -ex "set sysroot $ST_QEMU_SYSROOT" -ex "target remote :1234" -ex "break _st_md_thread_start" \
 #       -ex continue -ex bt ./backtrace
@@ -149,7 +151,7 @@ fi
 run_utest() {
     make -B linux-debug EXTRA_CFLAGS="$1" || return 1
     make -C utest EXTRA_CFLAGS="$1" || return 1
-    $ST_TOOL_RUN ./obj/st_utest
+    $ST_TOOL_RUN ./$TARGETDIR/st_utest
 }
 
 # The utest and the tools with ASAN, in their own build folder, because the gtest objects do not follow the
@@ -159,7 +161,7 @@ run_asan() (
     export TARGETDIR=LINUX_${CPU}_asan_DBG
     make -B linux-debug EXTRA_CFLAGS="$flags" || exit 1
     make -C utest EXTRA_CFLAGS="$flags" UTEST_FLAGS=-fsanitize=address || exit 1
-    ./obj/st_utest || exit 1
+    ./$TARGETDIR/st_utest || exit 1
     EXTRA_CFLAGS="$flags" LDFLAGS=-fsanitize=address ./auto/tools.sh
 )
 

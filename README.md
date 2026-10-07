@@ -245,10 +245,11 @@ The CPUs are `x86_64`, `aarch64`, `i386`, `arm`, `riscv64`, `loongarch64`, `mips
 `all`, the default. The script builds a local Docker image from `auto/qemu/Dockerfile` (Ubuntu 24.04, the cross
 compilers, and `qemu-user`) when it is missing. Its tag, `st-qemu:<hash>`, is a short hash of the files in
 `auto/qemu/`, so editing the Dockerfile builds a new image; the script then prints the `docker rmi` command for
-the older ones. It builds in place in `LINUX_<cpu>_qemu_DBG`, and prints one `RESULT <cpu> <run> PASS|FAIL`
-line per run. A CPU that is the container's own runs natively. On a Docker host of another CPU, such as Apple
-Silicon, `x86_64` runs in an amd64 container, `st-qemu:<hash>-amd64`, which Docker emulates as a whole. Every
-other CPU runs with qemu-user, which is slower than the real CPU, and skips `asan` with a `SKIP` line.
+the older ones. It builds everything in place in `LINUX_<cpu>_qemu_DBG`, the utest and the tools too, and
+leaves the `obj` link alone, so two CPUs can run at once in one checkout. It prints one
+`RESULT <cpu> <run> PASS|FAIL` line per run. A CPU that is the container's own runs natively. On a Docker host
+of another CPU, such as Apple Silicon, `x86_64` runs in an amd64 container, `st-qemu:<hash>-amd64`, which
+Docker emulates as a whole. Every other CPU runs with qemu-user, which is slower than the real CPU, and skips `asan` with a `SKIP` line.
 
 To build, run and debug a CPU by hand, `./auto/qemu.sh <cpu> shell` opens a bash in the image with the CPU's
 toolchain exported. The image has `gdb-multiarch`: start the program under the gdb stub of qemu-user, then
@@ -256,7 +257,7 @@ attach to it, as the header of `auto/qemu.sh` shows:
 
 ```bash
 ./auto/qemu.sh riscv64 shell
-make linux-debug && make -C tools/backtrace && cd tools/backtrace
+make linux-debug && make -C tools/backtrace && cd $TARGETDIR/tools/backtrace
 $ST_QEMU_USER -g 1234 -L $ST_QEMU_SYSROOT ./backtrace &
 gdb-multiarch -ex "set sysroot $ST_QEMU_SYSROOT" -ex "target remote :1234" -ex "break _st_md_thread_start" \
     -ex continue -ex bt ./backtrace
@@ -269,8 +270,8 @@ On macOS, build and run for either CPU; on Apple Silicon, x86_64 runs under Rose
 ./auto/darwin.sh x86_64
 ```
 
-It takes the same second argument, and builds in place in `DARWIN_<cpu>_DBG`. For Windows x64, run the
-utest and the tools natively, as in [Windows: UTest](#windows-utest) and [Windows: Tools](#windows-tools).
+It takes the same second argument, and builds everything in place in `DARWIN_<cpu>_DBG`. For Windows x64,
+run the utest and the tools natively, as in [Windows: UTest](#windows-utest) and [Windows: Tools](#windows-tools).
 
 ## Linux: Coverage
 

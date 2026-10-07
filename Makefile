@@ -278,7 +278,13 @@ endif
 ifeq ($(OS),)
 ST_ALL      = unknown
 else
-ST_ALL      = $(TARGETDIR) $(LIBRARIES) $(HEADER) $(DESC) obj-link
+ST_ALL      = $(TARGETDIR) $(LIBRARIES) $(HEADER)
+# When the environment or the command line sets TARGETDIR, as auto/qemu.sh does, the caller uses that folder, and the
+# build writes nothing outside it, neither the obj link nor st.pc, so builds for several CPUs can run at once in one
+# checkout. Otherwise obj points at TARGETDIR.
+ifeq ($(filter environment command,$(firstword $(origin TARGETDIR))),)
+ST_ALL      += $(DESC) obj-link
+endif
 endif
 
 all: $(ST_ALL)

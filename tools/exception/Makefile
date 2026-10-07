@@ -1,7 +1,9 @@
 .PHONY: clean
 
-LDLIBS=../../obj/libst.a
-CXXFLAGS=-g -O0 -I../../obj -I.. -DDEBUG
+include ../tool.mk
+
+LDLIBS=$(ST_OBJ_DIR)/libst.a
+CXXFLAGS=-g -O0 -I$(ST_OBJ_DIR) -I.. -DDEBUG
 
 OS_NAME 	= $(shell uname -s)
 ST_TARGET 	= linux-debug
@@ -28,14 +30,14 @@ CLEAN_FILES = exception exception.dSYM
 ifneq ($(filter MINGW% MSYS%,$(OS_NAME)),)
 ST_TARGET   = win64-debug
 CXX         = cl
-CXXFLAGS    = -nologo -Z7 -Od -EHsc -D_CRT_SECURE_NO_WARNINGS -I../../obj -I.. -DDEBUG
+CXXFLAGS    = -nologo -Z7 -Od -EHsc -D_CRT_SECURE_NO_WARNINGS -I$(ST_OBJ_DIR) -I.. -DDEBUG
 WARNFLAGS   = -W4
 LINK_OUT    = -Fe
 EXE         = .exe
 CLEAN_FILES += exception.exe exception.obj exception.ilk exception.pdb
 endif
 
-./exception$(EXE): exception.cpp ../tool.h $(LDLIBS)
+$(BIN_DIR)/exception$(EXE): exception.cpp ../tool.h $(LDLIBS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $(WARNFLAGS) $(LINK_OUT)$@ $< $(LDLIBS)
 
 clean:

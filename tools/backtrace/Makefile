@@ -1,7 +1,9 @@
 .PHONY: default clean
 
-LDLIBS=../../obj/libst.a -ldl
-CFLAGS=-g -O0 -rdynamic -I../../obj
+include ../tool.mk
+
+LDLIBS=$(ST_OBJ_DIR)/libst.a -ldl
+CFLAGS=-g -O0 -rdynamic -I$(ST_OBJ_DIR)
 
 OS_NAME 	= $(shell uname -s)
 ST_TARGET 	= linux-debug
@@ -29,17 +31,17 @@ CLEAN_FILES = backtrace backtrace.dSYM
 # PowerShell with the MSVC environment on PATH, where uname -s is MINGW64_NT-* or MSYS_NT-*. The library
 # brings ws2_32.lib itself.
 ifneq ($(filter MINGW% MSYS%,$(OS_NAME)),)
-LDLIBS      = ../../obj/libst.a
+LDLIBS      = $(ST_OBJ_DIR)/libst.a
 ST_TARGET   = win64-debug
 CC          = cl
-CFLAGS      = -nologo -Z7 -Od -I../../obj
+CFLAGS      = -nologo -Z7 -Od -I$(ST_OBJ_DIR)
 WARNFLAGS   = -W4
 LINK_OUT    = -Fe
 EXE         = .exe
 CLEAN_FILES += backtrace.exe backtrace.obj backtrace.ilk backtrace.pdb
 endif
 
-./backtrace$(EXE): backtrace.c $(LDLIBS)
+$(BIN_DIR)/backtrace$(EXE): backtrace.c $(LDLIBS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(WARNFLAGS) $(LINK_OUT)$@ $< $(LDLIBS)
 
 clean:

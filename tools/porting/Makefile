@@ -1,5 +1,7 @@
 .PHONY: clean
 
+include ../tool.mk
+
 CFLAGS=-g -O0
 
 OS_NAME 	= $(shell uname -s)
@@ -31,7 +33,7 @@ EXE         = .exe
 CLEAN_FILES += porting.exe porting.obj porting.ilk porting.pdb
 endif
 
-./porting$(EXE):  porting.c
+$(BIN_DIR)/porting$(EXE):  porting.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(WARNFLAGS) $(LINK_OUT)$@ $^ $(LDLIBS)
 
 clean:

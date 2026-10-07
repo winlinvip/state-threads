@@ -265,6 +265,17 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[0]))
         #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
         #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[2]))
+        /*
+         * A new thread starts in _st_md_thread_start (md_linux2.S), which calls _st_thread_main.
+         * The SP (slot 0) is 16-byte aligned, the PC is the return address ra (slot 1) that the
+         * restore jumps to, and the frame pointer s0 (slot 2) is null.
+         */
+        extern void _st_md_thread_start(void);
+        #define MD_INIT_THREAD_ENTRY(_t) do {                                           \
+            MD_GET_SP(_t) = (long)((intptr_t)MD_GET_SP(_t) & ~(intptr_t)15);            \
+            MD_GET_PC(_t) = (long)(intptr_t)_st_md_thread_start;                        \
+            MD_GET_FP(_t) = 0;                                                          \
+        } while (0)
     #elif defined(__loongarch64)
         /* https://github.com/ossrs/state-threads/issues/24 */
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[0]))

@@ -10,6 +10,7 @@
 #endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <st.h>
@@ -217,6 +218,26 @@ int has_frames(char** symbols, int nn_symbols, const char** names, int nn_names)
     return j == nn_names;
 }
 
+// Every platform but Cygwin64 starts a new coroutine in the assembly entry _st_md_thread_start, which calls
+// _st_thread_main and marks itself as the bottom frame for the unwinder.
+#ifndef __CYGWIN__
+#define ST_HAS_THREAD_ENTRY
+extern void _st_md_thread_start(void);
+
+// The entry is a few instructions, so a return address in it lies in this many bytes after its start.
+#define ST_THREAD_ENTRY_MAX_SIZE 128
+
+// Whether the walk stops at the entry: the outermost frame is the return address in the entry, after its call
+// to _st_thread_main, and no frame of the creator, such as st_thread_create or main, follows it.
+int stops_at_entry(void** addresses, int nn_addresses)
+{
+    uintptr_t entry = (uintptr_t)_st_md_thread_start;
+    uintptr_t outermost = (uintptr_t)addresses[nn_addresses - 1];
+    printf("\nentry=%p, outermost=%p\n", (void*)entry, (void*)outermost);
+    return outermost > entry && outermost < entry + ST_THREAD_ENTRY_MAX_SIZE;
+}
+#endif
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wframe-address"
 void bar() {
@@ -274,6 +295,14 @@ void bar() {
         failed = 1;
         return;
     }
+#ifdef ST_HAS_THREAD_ENTRY
+    // The builtin return addresses hold only the caller, so only a full backtrace reaches the entry.
+    if (!always_use_builtin && !stops_at_entry(addresses, nn_addresses)) {
+        printf("bar FAILED, the backtrace does not stop at _st_md_thread_start\n");
+        failed = 1;
+        return;
+    }
+#endif
     printf("bar OK\n");
     return;
 }

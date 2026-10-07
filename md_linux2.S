@@ -430,6 +430,47 @@
 
     /****************************************************************/
 
+    /*
+     * void _st_md_thread_start(void), the entry of a new thread, never returns.
+     * MD_INIT_THREAD_ENTRY in md.h points the return address of the new thread's jmpbuf here, its
+     * SP at a 16-byte boundary, and its fp at 0. So the first _st_md_cxt_restore of the thread
+     * jumps here on the new stack, with none of its creator's frames. The restore jumps by $ra and
+     * leaves $t9 and $gp to the creator, so the entry finds its own address with bal, computes its
+     * own $gp from it, and calls _st_thread_main through $t9, as PIC code expects. The undefined
+     * return address ends DWARF unwinds here, and the null fp and ra end frame-pointer walks.
+     */
+    	.globl _st_md_thread_start
+    	.type _st_md_thread_start, %function
+    	.align 2
+    _st_md_thread_start:
+    	.cfi_startproc
+    	.cfi_undefined $ra
+    	/*
+    	 * Explicit relocations, not the .cpsetup and dla macros, because the file is assembled
+    	 * without -fPIC, which turns those macros into absolute addresses, but also goes into
+    	 * the shared library.
+    	 */
+    	.set push
+    	.set noreorder
+    	.set nomacro
+        bal 1f                                      /* ra = 1f, the address of the next label */
+        nop
+    1:  lui $gp, %hi(%neg(%gp_rel(1b)))             /* gp = the GOT pointer of this module, ... */
+        daddu $gp, $gp, $ra                         /* ... from ra, the run-time address of 1b */
+        daddiu $gp, $gp, %lo(%neg(%gp_rel(1b)))
+        ld $t9, %call16(_st_thread_main)($gp)       /* PIC callees compute their gp from t9 */
+        move $fp, $zero
+        move $ra, $zero
+        jalr $t9
+        nop
+        /* _st_thread_main calls st_thread_exit, which never returns. */
+        break
+    	.set pop
+    	.cfi_endproc
+    	.size _st_md_thread_start, .-_st_md_thread_start
+
+    /****************************************************************/
+
 
 
 

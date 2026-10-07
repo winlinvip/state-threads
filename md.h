@@ -66,7 +66,8 @@ typedef struct _st_jmp_buf {
      * Linux    __amd64__/__x86_64__    long[8]
      * Linux    __aarch64__             long[22]
      * Linux    __arm__                 long[16]
-     * Linux    __mips__/__mips64       long[13]
+     * Linux    __mips64                long[20], 8 of them FP registers
+     * Linux    __mips__                long[24], 12 of them 6 FP doubles, 8-byte aligned
      * Linux    __riscv                 long[26], 12 of them FP registers
      * Linux    __loongarch64           long[12]
      * Cygwin64 __amd64__/__x86_64__    long[8]
@@ -77,6 +78,9 @@ typedef struct _st_jmp_buf {
     intptr_t __jmpbuf[36];
 #elif defined(__riscv)
     intptr_t __jmpbuf[26];
+#elif defined(__mips__) && !defined(__mips64)
+    /* The o32 save stores doubles with sdc1, which needs an 8-byte aligned address. */
+    intptr_t __jmpbuf[24] __attribute__((aligned(8)));
 #else
     intptr_t __jmpbuf[22];
 #endif

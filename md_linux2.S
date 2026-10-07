@@ -427,6 +427,14 @@
     #define JB_S6  9    /* S0-S7, Saved temporaries */
     #define JB_S7  10   /* S0-S7, Saved temporaries */
     #define JB_FP  11   /* FP/S8 Frame pointer */
+    #define JB_F24 12   /* F24-F31, the callee-saved FP registers of n64 */
+    #define JB_F25 13
+    #define JB_F26 14
+    #define JB_F27 15
+    #define JB_F28 16
+    #define JB_F29 17
+    #define JB_F30 18
+    #define JB_F31 19
 
     	.file "md_linux.S"
     	.text
@@ -448,6 +456,16 @@
         sd $s6, 72($a0) /* Save s6 to env[9],  *(long*)($a0+72)=s6 */
         sd $s7, 80($a0) /* Save s7 to env[10], *(long*)($a0+80)=s7 */
         sd $fp, 88($a0) /* Save fp to env[11], *(long*)($a0+88) =fp */
+#if !defined(__mips_soft_float)
+        sdc1 $f24, JB_F24 * 8($a0)
+        sdc1 $f25, JB_F25 * 8($a0)
+        sdc1 $f26, JB_F26 * 8($a0)
+        sdc1 $f27, JB_F27 * 8($a0)
+        sdc1 $f28, JB_F28 * 8($a0)
+        sdc1 $f29, JB_F29 * 8($a0)
+        sdc1 $f30, JB_F30 * 8($a0)
+        sdc1 $f31, JB_F31 * 8($a0)
+#endif
         li $v0, 0       /* Set return value to 0 */
         jr $ra          /* Return */
 
@@ -472,6 +490,16 @@
         ld $s6, 72($a0) /* Load sp from env[9],  s6=*(long*)($a0+72) */
         ld $s7, 80($a0) /* Load sp from env[10], s7=*(long*)($a0+80) */
         ld $fp, 88($a0) /* Load sp from env[2],  fp=*(long*)($a0+88)  */
+#if !defined(__mips_soft_float)
+        ldc1 $f24, JB_F24 * 8($a0)
+        ldc1 $f25, JB_F25 * 8($a0)
+        ldc1 $f26, JB_F26 * 8($a0)
+        ldc1 $f27, JB_F27 * 8($a0)
+        ldc1 $f28, JB_F28 * 8($a0)
+        ldc1 $f29, JB_F29 * 8($a0)
+        ldc1 $f30, JB_F30 * 8($a0)
+        ldc1 $f31, JB_F31 * 8($a0)
+#endif
         li $v0, 1       /* Set return value to 1 */
         jr $ra          /* Return to the saved return address */
 
@@ -545,6 +573,18 @@
     #define JB_S6  9    /* S0-S7, Saved temporaries */
     #define JB_S7  10   /* S0-S7, Saved temporaries */
     #define JB_FP  11   /* FP/S8 Frame pointer */
+    /*
+     * F20-F30 even, the callee-saved FP registers of o32, as doubles in two slots each. md.h aligns
+     * the jmpbuf to 8 bytes for sdc1. Saving the even registers as doubles is right for every o32 FP
+     * mode: with -mfp32 each holds the pair F20/F21 to F30/F31, and with -mfpxx or -mfp64 only the
+     * even registers are callee-saved.
+     */
+    #define JB_F20 12
+    #define JB_F22 14
+    #define JB_F24 16
+    #define JB_F26 18
+    #define JB_F28 20
+    #define JB_F30 22
 
     	.file "md_linux.S"
     	.text
@@ -566,6 +606,14 @@
         sw $s6, 36($a0) /* Save s6 to env[9],  *(long*)($a0+36)=s6 */
         sw $s7, 40($a0) /* Save s7 to env[10], *(long*)($a0+40)=s7 */
         sw $fp, 44($a0) /* Save fp to env[11], *(long*)($a0+44) =fp */
+#if !defined(__mips_soft_float)
+        sdc1 $f20, JB_F20 * 4($a0)
+        sdc1 $f22, JB_F22 * 4($a0)
+        sdc1 $f24, JB_F24 * 4($a0)
+        sdc1 $f26, JB_F26 * 4($a0)
+        sdc1 $f28, JB_F28 * 4($a0)
+        sdc1 $f30, JB_F30 * 4($a0)
+#endif
         li $v0, 0       /* Set return value to 0 */
         jr $ra          /* Return */
 
@@ -590,6 +638,14 @@
         lw $s6, 36($a0) /* Load sp from env[9],  s6=*(long*)($a0+36) */
         lw $s7, 40($a0) /* Load sp from env[10], s7=*(long*)($a0+40) */
         lw $fp, 44($a0) /* Load sp from env[2],  fp=*(long*)($a0+44)  */
+#if !defined(__mips_soft_float)
+        ldc1 $f20, JB_F20 * 4($a0)
+        ldc1 $f22, JB_F22 * 4($a0)
+        ldc1 $f24, JB_F24 * 4($a0)
+        ldc1 $f26, JB_F26 * 4($a0)
+        ldc1 $f28, JB_F28 * 4($a0)
+        ldc1 $f30, JB_F30 * 4($a0)
+#endif
         li $v0, 1       /* Set return value to 1 */
         jr $ra          /* Return to the saved return address */
 

@@ -232,6 +232,13 @@ extern void _st_md_thread_start(void);
 int stops_at_entry(void** addresses, int nn_addresses)
 {
     uintptr_t entry = (uintptr_t)_st_md_thread_start;
+#ifdef _WIN32
+    // With incremental linking, the default of an MSVC debug link, a function's address is a thunk, a jmp rel32
+    // (0xE9) to the function, so follow it to the entry.
+    if (*(unsigned char*)entry == 0xE9) {
+        entry += 5 + *(int32_t*)(entry + 1);
+    }
+#endif
     uintptr_t outermost = (uintptr_t)addresses[nn_addresses - 1];
     printf("\nentry=%p, outermost=%p\n", (void*)entry, (void*)outermost);
     return outermost > entry && outermost < entry + ST_THREAD_ENTRY_MAX_SIZE;

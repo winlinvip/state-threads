@@ -18,11 +18,11 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Unit tests for context switching: verify that _st_md_cxt_save/_st_md_cxt_restore
-// and st_thread_create's save-then-patch-SP trick actually work.
+// and the way st_thread_create starts a new coroutine on its own stack actually work.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Test: a coroutine runs on a different stack than the primordial thread.
-// This proves the SP-patching trick in st_thread_create works.
+// This proves st_thread_create starts the coroutine on its own stack.
 static void* coroutine_stack_addr(void* arg)
 {
     int local_var = 42;
@@ -128,7 +128,7 @@ VOID TEST(LearnKB, YieldOrderPreserved)
 }
 
 // Test: return value from coroutine is correctly passed through st_thread_join.
-// This proves the full lifecycle: create (save+patch SP) → schedule (restore) →
+// This proves the full lifecycle: create (entry on a new stack) → schedule (restore) →
 // run → exit (save retval) → join (read retval).
 static void* coroutine_retval(void* arg)
 {

@@ -677,22 +677,28 @@ _st_thread_t *st_thread_create(void *(*start)(void *arg), void *arg, int joinabl
     thread->start = start;
     thread->arg = arg;
 
-    /* Note that we must directly call rather than call any functions. */
+#ifdef MD_INIT_THREAD_ENTRY
+    /*
+     * The save only fills the jmpbuf as a template, such as the FPU control words, or $gp on MIPS. The new
+     * thread never resumes here: MD_INIT_THREAD_ENTRY below points it at an assembly entry on the new stack,
+     * which calls _st_thread_main. See docs/win64_coroutine.md.
+     */
+    _st_md_cxt_save(thread->context);
+#else
+    /*
+     * Only Cygwin64 has no assembly entry. Its new thread returns a second time from this save, on the new
+     * stack set below, so it must call _st_thread_main directly and nothing else.
+     */
     if (_st_md_cxt_save(thread->context)) {
         _st_thread_main();
     }
+#endif
     MD_GET_SP(thread) = (intptr_t)(stack->sp);
 #ifdef MD_INIT_STACK_BOUNDS
     /* Set the stack bounds the OS keeps for the new thread, such as the TIB on Windows. */
     MD_INIT_STACK_BOUNDS(thread, stack->stk_bottom, stack->stk_top);
 #endif
 #ifdef MD_INIT_THREAD_ENTRY
-    /*
-     * Start the new thread in an assembly entry that calls _st_thread_main, not after the save above.
-     * TODO: Refine the thread entry for all platforms and CPUs, so all start new threads the same way,
-     * with an assembly entry, and none depends on the save-then-patch-SP trick; only WIN64 has one now.
-     * See docs/win64_coroutine.md.
-     */
     MD_INIT_THREAD_ENTRY(thread);
 #endif
 

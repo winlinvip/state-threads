@@ -65,7 +65,7 @@ typedef struct _st_jmp_buf {
      * Linux    __i386__                long[6]
      * Linux    __amd64__/__x86_64__    long[8]
      * Linux    __aarch64__             long[22]
-     * Linux    __arm__                 long[16]
+     * Linux    __arm__                 long[38], 16 of them VFP d8-d15, 12 of them iWMMXt wr10-wr15
      * Linux    __mips64                long[20], 8 of them FP registers
      * Linux    __mips__                long[24], 12 of them 6 FP doubles, 8-byte aligned
      * Linux    __riscv                 long[26], 12 of them FP registers
@@ -78,6 +78,8 @@ typedef struct _st_jmp_buf {
     intptr_t __jmpbuf[36];
 #elif defined(__riscv)
     intptr_t __jmpbuf[26];
+#elif defined(__arm__)
+    intptr_t __jmpbuf[38];
 #elif defined(__mips__) && !defined(__mips64)
     /* The o32 save stores doubles with sdc1, which needs an 8-byte aligned address. */
     intptr_t __jmpbuf[24] __attribute__((aligned(8)));
@@ -85,6 +87,26 @@ typedef struct _st_jmp_buf {
     intptr_t __jmpbuf[22];
 #endif
 } _st_jmp_buf_t[1];
+
+#if defined(__arm__)
+    /*
+     * The arm _st_md_cxt_save in md_linux2.S stores 10 core registers, then d8-d15 with VFP, then wr10-wr15 with
+     * iWMMXt. A jmpbuf too small for that lets every save overwrite what follows it, the keys of the thread.
+     */
+    #define MD_ARM_JB_CORE_BYTES (10 * 4)
+    #ifdef __VFP_FP__
+        #define MD_ARM_JB_VFP_BYTES (8 * 8)
+    #else
+        #define MD_ARM_JB_VFP_BYTES 0
+    #endif
+    #ifdef __IWMMXT__
+        #define MD_ARM_JB_IWMMXT_BYTES (6 * 8)
+    #else
+        #define MD_ARM_JB_IWMMXT_BYTES 0
+    #endif
+    typedef char _st_md_jmpbuf_holds_the_save[
+        sizeof(_st_jmp_buf_t) >= MD_ARM_JB_CORE_BYTES + MD_ARM_JB_VFP_BYTES + MD_ARM_JB_IWMMXT_BYTES ? 1 : -1];
+#endif
 
 /* Defined in *.S file and implemented by ASM. */
 extern int _st_md_cxt_save(_st_jmp_buf_t env);

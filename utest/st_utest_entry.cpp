@@ -36,6 +36,27 @@ extern "C" {
 // the frame pointer.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// The save stores every register it keeps inside the jmpbuf, and writes nothing after it. The jmpbuf is the last field
+// of the thread, and the keys follow it on the stack, so a save that stores more overwrites the keys of the thread.
+TEST(ContextAccessorTest, SaveStaysInsideTheJmpbuf)
+{
+    struct {
+        _st_jmp_buf_t jb;
+        unsigned char room[256];
+    } s;
+    memset(&s, 0xa5, sizeof(s));
+    _st_md_cxt_save(s.jb);
+
+    int changed = 0;
+    for (int i = 0; i < (int)sizeof(s.room); i++) {
+        if (s.room[i] != 0xa5) {
+            changed = i + 1;
+        }
+    }
+    EXPECT_EQ(0, changed) << "the save wrote " << changed << " bytes past the " << sizeof(_st_jmp_buf_t)
+                          << "-byte jmpbuf";
+}
+
 #ifndef _WIN32 // MSVC has no frame address builtin; the entry test below uses the accessors on Windows.
 // Saves the context of its caller into t, and returns the frame address of its caller. The saved SP and frame pointer
 // are the ones of this function's frame after the save returns, and the saved PC is the return address into it.
@@ -49,7 +70,7 @@ static __attribute__((noinline)) uintptr_t entry_test_save(_st_thread_t* t)
 TEST(ContextAccessorTest, ReadTheSavedSpPcAndFramePointer)
 {
     // Room after the jmpbuf, the last field of the thread, as st_thread_create leaves for the keys, so a save that
-    // stores more than the jmpbuf holds, as on arm with VFP, does not overwrite this frame.
+    // stores more than the jmpbuf holds does not overwrite this frame.
     struct {
         _st_thread_t t;
         intptr_t room[32];

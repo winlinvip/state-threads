@@ -1,9 +1,10 @@
 #!/bin/bash
 #
-# Cross-build ST for one Linux CPU, and run the utest and the tools with qemu-user.
+# Cross-build ST for one Linux CPU, or for every one at once, and run the utest and the tools with qemu-user.
 #
 #   ./auto/qemu.sh <cpu> [utest|tools|tools-malloc|asan|all]
 #   ./auto/qemu.sh <cpu> shell [command]
+#   ./auto/qemu.sh all [utest|tools|tools-malloc|asan|all]
 #
 # CPUs: x86_64, aarch64, i386, arm, riscv64, loongarch64, mips, mipsel, mips64, mips64el.
 # The second argument picks what to run, all by default:
@@ -35,11 +36,20 @@
 # It prints one line per run, "RESULT <cpu> <run> PASS|FAIL (<seconds>s)", with the log of a failed run
 # before it, and exits 1 when any run failed.
 #
+# With all instead of a CPU, it builds the images once, then runs every CPU at once, each in its own container
+# and build folder, with its output in /tmp/st-qemu-all/<cpu>.log, kept until the next run. ST_QEMU_JOBS limits
+# how many CPUs run at once, 5 by default: x86_64 in the emulated amd64 container takes the longest, and 5 at
+# once finished as soon as 10. At the end it prints a summary, one row per CPU with PASS or FAIL and the seconds
+# of each run, and the wall time, then the end of the log of each CPU that failed, and exits 1 when any CPU
+# failed.
+#
 # Examples:
 #   ./auto/qemu.sh riscv64
 #   ./auto/qemu.sh mips utest
 #   ./auto/qemu.sh x86_64 asan
 #   ./auto/qemu.sh riscv64 shell
+#   ./auto/qemu.sh all
+#   ST_QEMU_JOBS=4 ./auto/qemu.sh all utest
 #
 # In the shell, the variables are those of the runs, CC, CXX, AR, LD, RANLIB, TARGETDIR and ST_TOOL_RUN, plus:
 #   ST_QEMU_USER     the qemu-user binary of the CPU, such as qemu-riscv64
@@ -60,6 +70,115 @@ cd "$(dirname "$0")/.." || exit 1
 
 CPU=$1
 WHAT=${2:-all}
+CPUS="x86_64 aarch64 i386 arm riscv64 loongarch64 mips mipsel mips64 mips64el"
+
+usage() {
+    echo "Usage: $0 <cpu> [utest|tools|tools-malloc|asan|all]" >&2
+    echo "       $0 <cpu> shell [command]" >&2
+    echo "       $0 all [utest|tools|tools-malloc|asan|all]" >&2
+    echo "CPUs: $CPUS" >&2
+    exit 2
+}
+
+# The tag of the images, st-qemu:<hash>, is a short hash of the path and content of every file in the build
+# context, auto/qemu/. git hash-object reads the files as they are on disk, so uncommitted edits count too.
+image_hash() {
+    HASH=$(cd auto/qemu && for f in $(find . -type f | LC_ALL=C sort); do echo "$f $(git hash-object "$f")"; done |
+        git hash-object --stdin | cut -c1-12)
+    if [[ -z $HASH ]]; then
+        echo "Failed to hash auto/qemu/" >&2
+        return 1
+    fi
+}
+
+# Build the image $1 from the stage $2 of the Dockerfile, for the platform $3, when it is missing.
+build_image() {
+    if docker image inspect $1 >/dev/null 2>&1; then
+        return 0
+    fi
+    echo "Build the image $1"
+    docker build $3 --target $2 -t $1 auto/qemu || return 1
+    OLD=$(docker image ls st-qemu --format "{{.Repository}}:{{.Tag}}" | grep -v "^st-qemu:$HASH" | grep -v "<none>")
+    if [[ -n $OLD ]]; then
+        echo "Older images are kept, about 3 GB each. To remove them:"
+        echo "  docker rmi" $OLD
+    fi
+}
+
+# Every CPU at once, on the host: build the images first, so the CPUs only use them, then run this script for
+# each CPU in the background, at most ST_QEMU_JOBS at once, each with its own log. Then print a summary.
+if [[ $CPU == all && -z $ST_QEMU_CONTAINER ]]; then
+    case $WHAT in
+        utest|tools|tools-malloc|asan) RUNS=$WHAT ;;
+        all) RUNS="utest tools tools-malloc asan" ;;
+        *) usage ;;
+    esac
+    image_hash || exit 1
+    build_image st-qemu:$HASH cross "" || exit 1
+    if [[ $(docker version --format '{{.Server.Arch}}') != amd64 ]]; then
+        build_image st-qemu:$HASH-amd64 amd64 "--platform linux/amd64" || exit 1
+    fi
+
+    JOBS=${ST_QEMU_JOBS:-5}
+    rm -rf /tmp/st-qemu-all
+    mkdir -p /tmp/st-qemu-all || exit 1
+    start=$(date +%s)
+    for cpu in $CPUS; do
+        while [[ $(jobs -pr | wc -l) -ge $JOBS ]]; do
+            sleep 1
+        done
+        echo "Start $cpu, log /tmp/st-qemu-all/$cpu.log"
+        (
+            begin=$(date +%s)
+            bash auto/qemu.sh $cpu $WHAT > /tmp/st-qemu-all/$cpu.log 2>&1 < /dev/null
+            echo "EXIT $? $(( $(date +%s) - begin ))" >> /tmp/st-qemu-all/$cpu.log
+        ) &
+    done
+    wait
+    wall=$(( $(date +%s) - start ))
+
+    # One row per CPU: PASS or FAIL, each run with its seconds or SKIP, and the seconds of the CPU.
+    FAILED=
+    total=0
+    printf "\n%-12s %-6s" CPU RESULT
+    for run in $RUNS; do
+        printf " %-13s" $run
+    done
+    printf " %s\n" seconds
+    for cpu in $CPUS; do
+        log=/tmp/st-qemu-all/$cpu.log
+        code=$(sed -n 's/^EXIT \([0-9]*\) [0-9]*$/\1/p' $log | tail -1)
+        seconds=$(sed -n 's/^EXIT [0-9]* \([0-9]*\)$/\1/p' $log | tail -1)
+        result=PASS
+        if [[ $code != 0 ]]; then
+            result=FAIL
+            FAILED="$FAILED $cpu"
+        fi
+        total=$(( total + ${seconds:-0} ))
+        printf "%-12s %-6s" $cpu $result
+        for run in $RUNS; do
+            cell=$(sed -n "s/^RESULT $cpu $run \([A-Z]*\) (\([0-9]*s\))$/\1 \2/p" $log | tail -1)
+            if [[ -z $cell ]] && grep -q "^SKIP $cpu $run:" $log; then
+                cell=SKIP
+            fi
+            printf " %-13s" "${cell:--}"
+        done
+        printf " %s\n" "${seconds:--}s"
+    done
+    echo "Wall time ${wall}s, at most $JOBS CPUs at once; the CPUs took ${total}s in all."
+
+    for cpu in $FAILED; do
+        echo
+        echo "The end of the log of $cpu, /tmp/st-qemu-all/$cpu.log:"
+        tail -40 /tmp/st-qemu-all/$cpu.log | sed 's/^/  | /'
+    done
+    if [[ -n $FAILED ]]; then
+        echo
+        echo "FAILED:$FAILED"
+        exit 1
+    fi
+    exit 0
+fi
 
 # The GNU triple, the compiler suffix, the qemu-user CPU, and the uname -m of each CPU.
 SUFFIX=
@@ -74,30 +193,18 @@ case $CPU in
     mipsel)      TRIPLE=mipsel-linux-gnu;        QEMU=mipsel;      MACHINE=mipsel ;;
     mips64)      TRIPLE=mips64-linux-gnuabi64;   QEMU=mips64;      MACHINE=mips64 ;;
     mips64el)    TRIPLE=mips64el-linux-gnuabi64; QEMU=mips64el;    MACHINE=mips64el ;;
-    *)
-        echo "Usage: $0 <cpu> [utest|tools|tools-malloc|asan|all]" >&2
-        echo "       $0 <cpu> shell [command]" >&2
-        echo "CPUs: x86_64 aarch64 i386 arm riscv64 loongarch64 mips mipsel mips64 mips64el" >&2
-        exit 2
-        ;;
+    *) usage ;;
 esac
 case $WHAT in
     utest|tools|tools-malloc|asan) RUNS=$WHAT ;;
     all) RUNS="utest tools tools-malloc asan" ;;
     shell) RUNS= ;;
-    *) echo "Usage: $0 <cpu> [utest|tools|tools-malloc|asan|all]" >&2; exit 2 ;;
+    *) usage ;;
 esac
 
 # On the host: run this script in the image.
 if [[ -z $ST_QEMU_CONTAINER ]]; then
-    # The tag is a short hash of the path and content of every file in the build context, auto/qemu/. git
-    # hash-object reads the files as they are on disk, so uncommitted edits count too.
-    HASH=$(cd auto/qemu && for f in $(find . -type f | LC_ALL=C sort); do echo "$f $(git hash-object "$f")"; done |
-        git hash-object --stdin | cut -c1-12)
-    if [[ -z $HASH ]]; then
-        echo "Failed to hash auto/qemu/" >&2
-        exit 1
-    fi
+    image_hash || exit 1
     # The cross image runs on the CPU of the Docker host. x86_64 on another host CPU runs in the amd64 image,
     # except in the shell, which needs gdb and qemu-x86_64.
     IMAGE=st-qemu:$HASH
@@ -108,15 +215,7 @@ if [[ -z $ST_QEMU_CONTAINER ]]; then
         TARGET=amd64
         PLATFORM="--platform linux/amd64"
     fi
-    if ! docker image inspect $IMAGE >/dev/null 2>&1; then
-        echo "Build the image $IMAGE"
-        docker build $PLATFORM --target $TARGET -t $IMAGE auto/qemu || exit 1
-        OLD=$(docker image ls st-qemu --format "{{.Repository}}:{{.Tag}}" | grep -v "^st-qemu:$HASH" | grep -v "<none>")
-        if [[ -n $OLD ]]; then
-            echo "Older images are kept, about 3 GB each. To remove them:"
-            echo "  docker rmi" $OLD
-        fi
-    fi
+    build_image $IMAGE $TARGET "$PLATFORM" || exit 1
     # The shell reads its input from the host, with a terminal when the host has one.
     TTY=
     if [[ $WHAT == shell ]]; then

@@ -251,6 +251,18 @@ leaves the `obj` link alone, so two CPUs can run at once in one checkout. It pri
 of another CPU, such as Apple Silicon, `x86_64` runs in an amd64 container, `st-qemu:<hash>-amd64`, which
 Docker emulates as a whole. Every other CPU runs with qemu-user, which is slower than the real CPU, and skips `asan` with a `SKIP` line.
 
+To test every CPU at once, use `all` instead of a CPU, with the same second argument:
+
+```bash
+./auto/qemu.sh all
+ST_QEMU_JOBS=10 ./auto/qemu.sh all utest
+```
+
+It builds the images once, then runs each CPU in its own container, at most `ST_QEMU_JOBS` at once (5 by
+default), with its output in `/tmp/st-qemu-all/<cpu>.log`. At the end it prints a summary, one row per CPU with
+`PASS` or `FAIL` and the seconds of each run, and the wall time, then the end of the log of each CPU that failed,
+and exits 1 when any CPU failed.
+
 To build, run and debug a CPU by hand, `./auto/qemu.sh <cpu> shell` opens a bash in the image with the CPU's
 toolchain exported. The image has `gdb-multiarch`: start the program under the gdb stub of qemu-user, then
 attach to it, as the header of `auto/qemu.sh` shows:

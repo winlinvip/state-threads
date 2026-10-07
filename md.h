@@ -108,6 +108,21 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[6]))
         #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[7]))
         #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[1]))
+        /*
+         * A new thread starts in _st_md_thread_start (md_darwin.S), which calls _st_thread_main.
+         * The SP (slot 6) moves 16-byte aligned minus 8 to a null return address, as at a function
+         * entry, the PC (slot 7) is set, and the frame pointer rbp (slot 1) is null, which ends the
+         * frame-pointer walk of backtrace().
+         */
+        extern void _st_md_thread_start(void);
+        #define MD_INIT_THREAD_ENTRY(_t) do {                               \
+            char *_sp = (char *)(intptr_t)MD_GET_SP(_t);                    \
+            _sp = (char *)((intptr_t)_sp & ~(intptr_t)15) - sizeof(void *); \
+            *(void **)_sp = NULL;                                           \
+            MD_GET_SP(_t) = (long)(intptr_t)_sp;                            \
+            MD_GET_PC(_t) = (long)(intptr_t)_st_md_thread_start;            \
+            MD_GET_FP(_t) = 0;                                              \
+        } while (0)
     #elif defined(__aarch64__)
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[13]))
         #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[11]))

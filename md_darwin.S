@@ -74,6 +74,30 @@
 
     /****************************************************************/
 
+    /*
+     * void _st_md_thread_start(void), the entry of a new thread, never returns.
+     * MD_INIT_THREAD_ENTRY in md.h points the PC of the new thread's jmpbuf here, its SP at a
+     * null return address, 8 mod 16 as at any function entry, and its rbp at 0. So the first
+     * _st_md_cxt_restore of the thread enters this function as if called from address 0, with
+     * none of its creator's registers. The null rbp ends frame-pointer walks such as backtrace(),
+     * and the undefined return address ends DWARF unwinds.
+     */
+    .globl __st_md_thread_start
+        .align 16
+    __st_md_thread_start:
+        .cfi_startproc
+        .cfi_undefined rip
+        xorl %ebp, %ebp
+        /* Align rsp to 16 at the call. */
+        subq $8, %rsp
+        .cfi_adjust_cfa_offset 8
+        call __st_thread_main
+        /* _st_thread_main calls st_thread_exit, which never returns. */
+        ud2
+        .cfi_endproc
+
+    /****************************************************************/
+
 
 
 

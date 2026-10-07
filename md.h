@@ -67,7 +67,7 @@ typedef struct _st_jmp_buf {
      * Linux    __aarch64__             long[22]
      * Linux    __arm__                 long[16]
      * Linux    __mips__/__mips64       long[13]
-     * Linux    __riscv                 long[14]
+     * Linux    __riscv                 long[26], 12 of them FP registers
      * Linux    __loongarch64           long[12]
      * Cygwin64 __amd64__/__x86_64__    long[8]
      * Win64    _M_X64                  long long[36]
@@ -75,6 +75,8 @@ typedef struct _st_jmp_buf {
     /* Pointer-sized slots, because MSVC long is 32-bit (LLP64). */
 #if defined(WIN64)
     intptr_t __jmpbuf[36];
+#elif defined(__riscv)
+    intptr_t __jmpbuf[26];
 #else
     intptr_t __jmpbuf[22];
 #endif

@@ -275,6 +275,27 @@
     #define JB_S9  11   /* S2-S11,  Saved register */
     #define JB_S10 12   /* S2-S11,  Saved register */
     #define JB_S11 13   /* S2-S11,  Saved register */
+    #define JB_FS0 14   /* FS0-FS11, Saved FP registers, when the CPU has them */
+    #define JB_FS1 15
+    #define JB_FS2 16
+    #define JB_FS3 17
+    #define JB_FS4 18
+    #define JB_FS5 19
+    #define JB_FS6 20
+    #define JB_FS7 21
+    #define JB_FS8 22
+    #define JB_FS9 23
+    #define JB_FS10 24
+    #define JB_FS11 25
+
+    /* Save the low 64 bits of FS0-FS11 with D, their 32 bits with only F, and nothing with soft float. */
+    #if defined(__riscv_flen) && __riscv_flen >= 64
+        #define FP_SAVE fsd
+        #define FP_LOAD fld
+    #elif defined(__riscv_flen) && __riscv_flen == 32
+        #define FP_SAVE fsw
+        #define FP_LOAD flw
+    #endif
 
 
     	.file "md_linux.S"
@@ -299,6 +320,20 @@
 	sd    s9,  JB_S9  * 8(a0)
 	sd    s10, JB_S10 * 8(a0)
 	sd    s11, JB_S11 * 8(a0)
+#if defined(FP_SAVE)
+	FP_SAVE fs0,  JB_FS0  * 8(a0)
+	FP_SAVE fs1,  JB_FS1  * 8(a0)
+	FP_SAVE fs2,  JB_FS2  * 8(a0)
+	FP_SAVE fs3,  JB_FS3  * 8(a0)
+	FP_SAVE fs4,  JB_FS4  * 8(a0)
+	FP_SAVE fs5,  JB_FS5  * 8(a0)
+	FP_SAVE fs6,  JB_FS6  * 8(a0)
+	FP_SAVE fs7,  JB_FS7  * 8(a0)
+	FP_SAVE fs8,  JB_FS8  * 8(a0)
+	FP_SAVE fs9,  JB_FS9  * 8(a0)
+	FP_SAVE fs10, JB_FS10 * 8(a0)
+	FP_SAVE fs11, JB_FS11 * 8(a0)
+#endif
 	li    a0,  0
 	jr    ra
     	.size _st_md_cxt_save, .-_st_md_cxt_save
@@ -324,6 +359,20 @@
 	ld        s9,  JB_S9  * 8(a0)
 	ld        s10, JB_S10 * 8(a0)
 	ld        s11, JB_S11 * 8(a0)
+#if defined(FP_LOAD)
+	FP_LOAD   fs0,  JB_FS0  * 8(a0)
+	FP_LOAD   fs1,  JB_FS1  * 8(a0)
+	FP_LOAD   fs2,  JB_FS2  * 8(a0)
+	FP_LOAD   fs3,  JB_FS3  * 8(a0)
+	FP_LOAD   fs4,  JB_FS4  * 8(a0)
+	FP_LOAD   fs5,  JB_FS5  * 8(a0)
+	FP_LOAD   fs6,  JB_FS6  * 8(a0)
+	FP_LOAD   fs7,  JB_FS7  * 8(a0)
+	FP_LOAD   fs8,  JB_FS8  * 8(a0)
+	FP_LOAD   fs9,  JB_FS9  * 8(a0)
+	FP_LOAD   fs10, JB_FS10 * 8(a0)
+	FP_LOAD   fs11, JB_FS11 * 8(a0)
+#endif
 	li        a0,  1
 	jr        ra
     	.size _st_md_cxt_restore, .-_st_md_cxt_restore

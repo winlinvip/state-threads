@@ -19,7 +19,8 @@
 # from ST_TOOL_RUN.
 #
 # It prints one line per run, "RESULT <cpu> <run> PASS|FAIL (<seconds>s)", with the log of a failed run
-# before it, and exits 1 when any run failed.
+# before it, and exits 1 when any run failed. A run that leaves out what qemu-user cannot run on that CPU prints
+# "SKIP <cpu> <run> <what>: <why>" before its RESULT line.
 #
 # Examples:
 #   ./auto/qemu.sh riscv64
@@ -74,12 +75,38 @@ if [[ $(uname -m) != "$MACHINE" ]]; then
 fi
 export ST_TOOL_RUN
 
+# What qemu-user itself cannot run on a CPU, though ST is fine: a gtest filter and the tools to leave out, with
+# the reason. Each skip prints a SKIP line. Known ST failures are never listed here; they stay visible.
+UTEST_FILTER=
+SKIP_TOOLS=
+SKIP_WHY=
+if [[ -n $ST_TOOL_RUN ]]; then
+    case $CPU in
+        x86_64)
+            # qemu-x86_64 8.2.2 crashes, "QEMU internal SIGSEGV", in pthread_getattr_np on the main thread, also in
+            # a program without ST. The primordial stack test and the lifecycle tool call it.
+            UTEST_FILTER=-PrimordialStackTest.DescribesTheMainThreadStack
+            SKIP_TOOLS=lifecycle
+            SKIP_WHY="qemu-x86_64 crashes in pthread_getattr_np on the main thread"
+            ;;
+    esac
+fi
+
+# The tools to run, every folder in tools/ but SKIP_TOOLS.
+TOOLS=
+for dir in tools/*/; do
+    name=$(basename "$dir")
+    if [[ " $SKIP_TOOLS " != *" $name "* ]]; then
+        TOOLS="$TOOLS $name"
+    fi
+done
+
 # Build the library with EXTRA_CFLAGS $1, then the utest, and run it. -B rebuilds the library, so it never
 # keeps objects built with other flags; the utest objects depend on the library and follow it.
 run_utest() {
     make -B linux-debug EXTRA_CFLAGS="$1" || return 1
     make -C utest EXTRA_CFLAGS="$1" || return 1
-    $ST_TOOL_RUN ./obj/st_utest
+    $ST_TOOL_RUN ./obj/st_utest ${UTEST_FILTER:+--gtest_filter=$UTEST_FILTER}
 }
 
 LOG=/tmp/st-qemu.log
@@ -89,12 +116,18 @@ for run in $RUNS; do
     status=PASS
     case $run in
         utest) run_utest "" > $LOG 2>&1 || status=FAIL ;;
-        tools) ./auto/tools.sh > $LOG 2>&1 || status=FAIL ;;
-        tools-malloc) EXTRA_CFLAGS=-DMALLOC_STACK ./auto/tools.sh > $LOG 2>&1 || status=FAIL ;;
+        tools) ./auto/tools.sh $TOOLS > $LOG 2>&1 || status=FAIL ;;
+        tools-malloc) EXTRA_CFLAGS=-DMALLOC_STACK ./auto/tools.sh $TOOLS > $LOG 2>&1 || status=FAIL ;;
     esac
     if [[ $status == FAIL ]]; then
         tail -40 $LOG | sed 's/^/  | /'
         FAILED=1
+    fi
+    if [[ $run == utest && -n $UTEST_FILTER ]]; then
+        echo "SKIP $CPU $run ${UTEST_FILTER#-}: $SKIP_WHY"
+    fi
+    if [[ $run != utest && -n $SKIP_TOOLS ]]; then
+        echo "SKIP $CPU $run $SKIP_TOOLS: $SKIP_WHY"
     fi
     echo "RESULT $CPU $run $status ($(( $(date +%s) - start ))s)"
 done

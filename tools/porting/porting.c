@@ -39,7 +39,13 @@ int main(int argc, char** argv)
     printf("\nCPU specs:\n");
 #ifdef __mips__
     // https://s3-eu-west-1.amazonaws.com/downloads-mips/documents/MD00565-2B-MIPS32-QRC-01.01.pdf
-    printf("__mips__: %d, __mips: %d, _MIPSEL: %d\n", __mips__, __mips, _MIPSEL);
+    printf("__mips__: %d, __mips: %d\n", __mips__, __mips);
+#endif
+#ifdef _MIPSEL
+    printf("_MIPSEL: %d\n", _MIPSEL);
+#endif
+#ifdef _MIPSEB
+    printf("_MIPSEB: %d\n", _MIPSEB);
 #endif
 #ifdef __mips64
     printf("__mips64: %d\n", __mips64);

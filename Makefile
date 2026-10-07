@@ -129,7 +129,9 @@ ifeq ($(OS), LINUX)
 EXTRA_OBJS  = $(TARGETDIR)/md_linux.o $(TARGETDIR)/md_linux2.o
 SFLAGS      = -fPIC
 LDFLAGS     = -shared -soname=$(SONAME) -lc
-OTHER_FLAGS = -Wall
+# Unwind tables, which GCC leaves out of C code on some CPUs, such as arm, so glibc backtrace() and C++
+# exceptions walk through the frames of ST up to the entry of a thread.
+OTHER_FLAGS = -Wall -funwind-tables
 DEFINES     += -DMD_HAVE_EPOLL -DMD_HAVE_SELECT
 endif
 

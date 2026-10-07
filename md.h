@@ -238,6 +238,18 @@ extern void _st_md_cxt_restore(_st_jmp_buf_t env, int val);
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[8]))
         #define MD_GET_PC(_t) *((long *)&((_t)->context[0].__jmpbuf[9]))
         #define MD_GET_FP(_t) *((long *)&((_t)->context[0].__jmpbuf[7]))
+        /*
+         * A new thread starts in _st_md_thread_start (md_linux2.S), which calls _st_thread_main.
+         * The SP (slot 8) is 8-byte aligned, the PC is the link register (slot 9) that the restore
+         * branches to with bx, so the address of the entry also picks ARM or Thumb, and the frame
+         * pointer r11 (slot 7) is null.
+         */
+        extern void _st_md_thread_start(void);
+        #define MD_INIT_THREAD_ENTRY(_t) do {                                           \
+            MD_GET_SP(_t) = (long)((intptr_t)MD_GET_SP(_t) & ~(intptr_t)7);             \
+            MD_GET_PC(_t) = (long)(intptr_t)_st_md_thread_start;                        \
+            MD_GET_FP(_t) = 0;                                                          \
+        } while (0)
     #elif defined(__mips64)
         /* https://github.com/ossrs/state-threads/issues/21 */
         #define MD_GET_SP(_t) *((long *)&((_t)->context[0].__jmpbuf[0]))

@@ -215,6 +215,41 @@
 
     /****************************************************************/
 
+    /*
+     * void _st_md_thread_start(void), the entry of a new thread, never returns.
+     * MD_INIT_THREAD_ENTRY in md.h points the link register of the new thread's jmpbuf here, its
+     * SP at an 8-byte boundary, and its fp at 0. So the first _st_md_cxt_restore of the thread
+     * branches here with bx on the new stack, with none of its creator's frames. The bl to
+     * _st_thread_main becomes a blx when the C code is Thumb.
+     *
+     * The entry pushes two null words, which keep the 8-byte alignment, and its EHABI unwind entry
+     * says they are the saved fp and lr. So the EHABI unwinder of glibc backtrace() and C++
+     * exceptions lists the entry as the last frame, and stops at its null return address. The
+     * undefined return address in the CFI ends DWARF unwinds here, such as gdb's, and the null fp,
+     * r7 (the frame pointer of Thumb code) and lr end frame-pointer walks.
+     */
+    	.globl _st_md_thread_start
+    	.type _st_md_thread_start, %function
+    	.align 2
+    _st_md_thread_start:
+    	.fnstart
+    	.cfi_startproc
+    	.cfi_undefined lr
+    	mov	fp, #0
+    	mov	r7, #0
+    	mov	lr, #0
+    	.save	{fp, lr}
+    	push	{fp, lr}
+    	.cfi_adjust_cfa_offset 8
+    	bl	_st_thread_main
+    	/* _st_thread_main calls st_thread_exit, which never returns. */
+    	udf	#0
+    	.cfi_endproc
+    	.fnend
+    	.size _st_md_thread_start, .-_st_md_thread_start
+
+    /****************************************************************/
+
 
 
 

@@ -14,6 +14,10 @@ CPU_ARCHS 	+= $(shell g++ -dM -E - </dev/null |grep -q '__aarch64' && echo arm64
 endif
 CFLAGS      += -arch $(CPU_ARCHS)
 endif
+# glibc backtrace() walks the stack with the unwind tables, which GCC leaves out of C code on some CPUs, such as arm.
+ifeq ($(OS_NAME), Linux)
+CFLAGS      += -funwind-tables
+endif
 
 # The warning and output flags, the executable suffix, and the files to clean.
 WARNFLAGS   = -Wall

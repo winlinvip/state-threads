@@ -58,11 +58,9 @@ static void *do_detached(void *arg)
     return NULL;
 }
 
-/* Use most of the stack, and return a sum of it so nothing is optimized away. */
-static void *do_stack(void *arg)
+/* Fill size bytes of buf, and return a sum of them so nothing is optimized away. */
+static long fill_stack(volatile char *buf, long size)
 {
-    long size = (long)arg;
-    volatile char buf[64 * 1024];
     long sum = 0;
     for (long i = 0; i < size; i++) {
         buf[i] = (char)i;
@@ -70,7 +68,24 @@ static void *do_stack(void *arg)
     for (long i = 0; i < size; i++) {
         sum += buf[i];
     }
-    return (void *)sum;
+    return sum;
+}
+
+/*
+ * Use most of the stack, in a frame no larger than the locals it uses. A coroutine needs room for about twice
+ * its frame: on macOS x86_64, ___chkstk_darwin probes a large frame a second time about twice its size below
+ * SP, so a 64 KB frame faults on the default 128 KB stack.
+ */
+static void *do_stack_16k(void *arg)
+{
+    volatile char buf[16 * 1024];
+    return (void *)fill_stack(buf, (long)arg);
+}
+
+static void *do_stack_64k(void *arg)
+{
+    volatile char buf[64 * 1024];
+    return (void *)fill_stack(buf, (long)arg);
 }
 
 static long stack_sum(long size)
@@ -160,13 +175,13 @@ static int stacks(void)
 {
     /* The default stack holds 16 KB of locals. */
     void *retval = NULL;
-    st_thread_t trd = st_thread_create(do_stack, (void *)(16 * 1024L), 1, 0);
+    st_thread_t trd = st_thread_create(do_stack_16k, (void *)(16 * 1024L), 1, 0);
     CHECK(trd);
     CHECK(st_thread_join(trd, &retval) == 0);
     CHECK((long)retval == stack_sum(16 * 1024));
 
     /* A custom stack, not a page multiple, holds 64 KB of locals. */
-    trd = st_thread_create(do_stack, (void *)(64 * 1024L), 1, 256 * 1024 + 100);
+    trd = st_thread_create(do_stack_64k, (void *)(64 * 1024L), 1, 256 * 1024 + 100);
     CHECK(trd);
     CHECK(st_thread_join(trd, &retval) == 0);
     CHECK((long)retval == stack_sum(64 * 1024));
@@ -277,7 +292,7 @@ static int randomize(void)
     void *retval = NULL;
     st_thread_t trds[8];
     for (long i = 0; i < 8; i++) {
-        trds[i] = st_thread_create(do_stack, (void *)(16 * 1024L), 1, 0);
+        trds[i] = st_thread_create(do_stack_16k, (void *)(16 * 1024L), 1, 0);
         CHECK(trds[i]);
     }
     for (int i = 0; i < 8; i++) {
@@ -288,7 +303,7 @@ static int randomize(void)
     /* Stacks made while it was on are reused after it is off. */
     CHECK(st_randomize_stacks(0) == 1);
     for (long i = 0; i < 8; i++) {
-        trds[i] = st_thread_create(do_stack, (void *)(16 * 1024L), 1, 0);
+        trds[i] = st_thread_create(do_stack_16k, (void *)(16 * 1024L), 1, 0);
         CHECK(trds[i]);
     }
     for (int i = 0; i < 8; i++) {

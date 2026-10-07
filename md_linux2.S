@@ -589,6 +589,29 @@
 
     /****************************************************************/
 
+    /*
+     * void _st_md_thread_start(void), the entry of a new thread, never returns.
+     * MD_INIT_THREAD_ENTRY in md.h points the return address of the new thread's jmpbuf here, its
+     * SP at a 16-byte boundary, and its fp at 0. So the first _st_md_cxt_restore of the thread
+     * jumps here on the new stack, with none of its creator's frames. The undefined return
+     * address ends DWARF unwinds here, and the null fp and ra end frame-pointer walks.
+     */
+    	.globl _st_md_thread_start
+    	.type _st_md_thread_start, %function
+    	.align 2
+    _st_md_thread_start:
+    	.cfi_startproc
+    	.cfi_undefined 1         /* ra, $r1 */
+        move    $r22, $r0            /* fp = 0 */
+        move    $r1, $r0             /* ra = 0 */
+        bl      _st_thread_main
+        /* _st_thread_main calls st_thread_exit, which never returns. */
+        break   0
+    	.cfi_endproc
+    	.size _st_md_thread_start, .-_st_md_thread_start
+
+    /****************************************************************/
+
 #endif
 
 #if defined(__linux__) && defined(__ELF__)

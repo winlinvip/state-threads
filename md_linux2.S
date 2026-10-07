@@ -367,8 +367,8 @@
      * Internal __jmp_buf layout
      */
     #define JB_SP  0    /* Stack pointer */
-    #define JB_RA  11   /* Return address */
-    #define JB_GP  1    /* Global pointer */
+    #define JB_RA  1    /* Return address */
+    #define JB_GP  2    /* Global pointer */
     #define JB_S0  3    /* S0-S7, Saved temporaries */
     #define JB_S1  4    /* S0-S7, Saved temporaries */
     #define JB_S2  5    /* S0-S7, Saved temporaries */
@@ -377,7 +377,7 @@
     #define JB_S5  8    /* S0-S7, Saved temporaries */
     #define JB_S6  9    /* S0-S7, Saved temporaries */
     #define JB_S7  10   /* S0-S7, Saved temporaries */
-    #define JB_FP  2    /* FP/S8 Frame pointer */
+    #define JB_FP  11   /* FP/S8 Frame pointer */
 
     	.file "md_linux.S"
     	.text
@@ -485,8 +485,8 @@
      * Internal __jmp_buf layout
      */
     #define JB_SP  0    /* Stack pointer */
-    #define JB_RA  11   /* Return address */
-    #define JB_GP  1    /* Global pointer */
+    #define JB_RA  1    /* Return address */
+    #define JB_GP  2    /* Global pointer */
     #define JB_S0  3    /* S0-S7, Saved temporaries */
     #define JB_S1  4    /* S0-S7, Saved temporaries */
     #define JB_S2  5    /* S0-S7, Saved temporaries */
@@ -495,7 +495,7 @@
     #define JB_S5  8    /* S0-S7, Saved temporaries */
     #define JB_S6  9    /* S0-S7, Saved temporaries */
     #define JB_S7  10   /* S0-S7, Saved temporaries */
-    #define JB_FP  2    /* FP/S8 Frame pointer */
+    #define JB_FP  11   /* FP/S8 Frame pointer */
 
     	.file "md_linux.S"
     	.text
@@ -548,9 +548,50 @@
 
     /****************************************************************/
 
+    /*
+     * void _st_md_thread_start(void), the entry of a new thread, never returns.
+     * MD_INIT_THREAD_ENTRY in md.h points the return address of the new thread's jmpbuf here, its
+     * SP at an 8-byte boundary, and its fp at 0. So the first _st_md_cxt_restore of the thread
+     * jumps here on the new stack, with none of its creator's frames. The restore jumps by $ra and
+     * leaves $t9 and $gp to the creator, so the entry finds its own address with bal, computes its
+     * own $gp from it, and calls _st_thread_main through $t9, as PIC code expects. The o32 caller
+     * reserves 16 bytes below the SP for the callee to save its four argument registers. The
+     * undefined return address ends DWARF unwinds here, and the null fp and ra end frame-pointer
+     * walks.
+     */
+    	.globl _st_md_thread_start
+    	.type _st_md_thread_start, %function
+    	.align 2
+    _st_md_thread_start:
+    	.cfi_startproc
+    	.cfi_undefined $ra
+    	/*
+    	 * Explicit relocations, not the .cpload macro, because the file is assembled without
+    	 * -fPIC, which turns .cpload into the absolute address __gnu_local_gp, but also goes into
+    	 * the shared library.
+    	 */
+    	.set push
+    	.set noreorder
+    	.set nomacro
+        bal 1f                                      /* ra = 1f, the address of the next label */
+        nop
+    1:  lui $gp, %hi(_gp_disp)                      /* gp = the GOT pointer of this module, ... */
+        addiu $gp, $gp, %lo(_gp_disp)
+        addu $gp, $gp, $ra                         /* ... from ra, the run-time address of 1b */
+        lw $t9, %call16(_st_thread_main)($gp)      /* PIC callees compute their gp from t9 */
+        addiu $sp, $sp, -16                        /* The argument save area of the callee */
+    	.cfi_adjust_cfa_offset 16
+        move $fp, $zero
+        move $ra, $zero
+        jalr $t9
+        nop
+        /* _st_thread_main calls st_thread_exit, which never returns. */
+        break
+    	.set pop
+    	.cfi_endproc
+    	.size _st_md_thread_start, .-_st_md_thread_start
 
-
-
+    /****************************************************************/
 
 
 

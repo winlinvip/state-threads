@@ -11,12 +11,15 @@
 #   tools-malloc  auto/tools.sh with EXTRA_CFLAGS=-DMALLOC_STACK
 #   all           all three, in that order, and every one runs even when another fails
 #
-# On the host, it builds the Docker image st-qemu:ubuntu24.04 from auto/qemu/Dockerfile when missing, and
-# runs itself in it with the checkout mounted. In the container, it exports the cross toolchain, CC, CXX,
-# AR, LD and RANLIB, which the Makefiles take from the environment, and builds in place in
-# LINUX_<cpu>_qemu_DBG, so the CPUs and the native Linux build never share objects. A CPU that is the
-# container's own runs natively; any other runs with qemu-<cpu> -L <sysroot>, which auto/tools.sh takes
-# from ST_TOOL_RUN.
+# On the host, it builds the Docker image from auto/qemu/Dockerfile when missing, and runs itself in it with the
+# checkout mounted. The image is local only, never pushed to a registry. Its tag, st-qemu:<hash>, is a short hash
+# of every file in auto/qemu/, so a change there, even a comment, builds a new image. Old images are kept; after
+# a build, the script prints the docker rmi command for the older st-qemu tags.
+#
+# In the container, it exports the cross toolchain, CC, CXX, AR, LD and RANLIB, which the Makefiles take from
+# the environment, and builds in place in LINUX_<cpu>_qemu_DBG, so the CPUs and the native Linux build never
+# share objects. A CPU that is the container's own runs natively; any other runs with qemu-<cpu> -L <sysroot>,
+# which auto/tools.sh takes from ST_TOOL_RUN.
 #
 # It prints one line per run, "RESULT <cpu> <run> PASS|FAIL (<seconds>s)", with the log of a failed run
 # before it, and exits 1 when any run failed. A run that leaves out what qemu-user cannot run on that CPU prints
@@ -30,7 +33,6 @@ cd "$(dirname "$0")/.." || exit 1
 
 CPU=$1
 WHAT=${2:-all}
-IMAGE=st-qemu:ubuntu24.04
 
 # The GNU triple, the compiler suffix, the qemu-user CPU, and the uname -m of each CPU.
 SUFFIX=
@@ -59,9 +61,23 @@ esac
 
 # On the host: run this script in the image.
 if [[ -z $ST_QEMU_CONTAINER ]]; then
+    # The tag is a short hash of the path and content of every file in the build context, auto/qemu/. git
+    # hash-object reads the files as they are on disk, so uncommitted edits count too.
+    HASH=$(cd auto/qemu && for f in $(find . -type f | LC_ALL=C sort); do echo "$f $(git hash-object "$f")"; done |
+        git hash-object --stdin | cut -c1-12)
+    if [[ -z $HASH ]]; then
+        echo "Failed to hash auto/qemu/" >&2
+        exit 1
+    fi
+    IMAGE=st-qemu:$HASH
     if ! docker image inspect $IMAGE >/dev/null 2>&1; then
         echo "Build the image $IMAGE"
         docker build -t $IMAGE auto/qemu || exit 1
+        OLD=$(docker image ls st-qemu --format "{{.Repository}}:{{.Tag}}" | grep -v "^st-qemu:$HASH" | grep -v "<none>")
+        if [[ -n $OLD ]]; then
+            echo "Older images are kept, about 3 GB each. To remove them:"
+            echo "  docker rmi" $OLD
+        fi
     fi
     exec docker run --rm -e ST_QEMU_CONTAINER=1 --user "$(id -u):$(id -g)" \
         -v "$(pwd)":/st -w /st $IMAGE bash auto/qemu.sh "$CPU" "$WHAT"

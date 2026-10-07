@@ -24,7 +24,7 @@
 #
 # x86_64 on a Docker host of another CPU, such as Apple Silicon, runs in a second image, st-qemu:<hash>-amd64, the
 # amd64 stage of the same Dockerfile, with --platform linux/amd64: Docker emulates the whole container, and the
-# native g++ builds and runs x86_64 there, instead of qemu-x86_64, which crashes in pthread_getattr_np.
+# native g++ builds and runs x86_64 there, faster than qemu-x86_64, which also fails some tests that x86_64 passes.
 #
 # In the container, it exports the toolchain, CC, CXX, AR, LD and RANLIB, which the Makefiles take from the
 # environment, and TARGETDIR, LINUX_<cpu>_qemu_DBG. With TARGETDIR set, the Makefiles and auto/tools.sh build

@@ -17,3 +17,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         g++-riscv64-linux-gnu g++-14-loongarch64-linux-gnu \
         g++-mips-linux-gnu g++-mipsel-linux-gnu g++-mips64-linux-gnuabi64 g++-mips64el-linux-gnuabi64 \
     && rm -rf /var/lib/apt/lists/*
+
+# gdb-multiarch, to debug any CPU through the gdb stub of qemu-<cpu> -g <port>. A layer of its own, so the cross
+# compilers above stay cached.
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gdb-multiarch \
+    && rm -rf /var/lib/apt/lists/*

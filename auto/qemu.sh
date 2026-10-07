@@ -3,6 +3,7 @@
 # Cross-build ST for one Linux CPU, and run the utest and the tools with qemu-user.
 #
 #   ./auto/qemu.sh <cpu> [utest|tools|tools-malloc|asan|all]
+#   ./auto/qemu.sh <cpu> shell [command]
 #
 # CPUs: x86_64, aarch64, i386, arm, riscv64, loongarch64, mips, mipsel, mips64, mips64el.
 # The second argument picks what to run, all by default:
@@ -12,6 +13,8 @@
 #   asan          st_utest and auto/tools.sh with ASAN and MALLOC_STACK, in LINUX_<cpu>_asan_DBG, only on a CPU
 #                 that runs natively in its container; any other prints a SKIP line instead
 #   all           all four, in that order, and every one runs even when another fails
+#   shell         a bash in the image, with the toolchain and the variables below exported, to build, run and
+#                 debug by hand; with a command, it runs that command instead, as bash -c
 #
 # On the host, it builds the Docker image from auto/qemu/Dockerfile when missing, and runs itself in it with the
 # checkout mounted. The image is local only, never pushed to a registry. Its tag, st-qemu:<hash>, is a short hash
@@ -34,6 +37,22 @@
 #   ./auto/qemu.sh riscv64
 #   ./auto/qemu.sh mips utest
 #   ./auto/qemu.sh x86_64 asan
+#   ./auto/qemu.sh riscv64 shell
+#
+# In the shell, the variables are those of the runs, CC, CXX, AR, LD, RANLIB, TARGETDIR and ST_TOOL_RUN, plus:
+#   ST_QEMU_USER     the qemu-user binary of the CPU, such as qemu-riscv64
+#   ST_QEMU_SYSROOT  the sysroot of the CPU, such as /usr/riscv64-linux-gnu
+#
+# To debug a CPU with gdb-multiarch, start the program under the gdb stub of qemu-user, which waits for gdb on a
+# port, then attach gdb-multiarch to it, with the sysroot for the shared libraries. For example, stop the
+# backtrace tool in the thread entry:
+#   ./auto/qemu.sh riscv64 shell
+#   make linux-debug && make -C tools/backtrace && cd tools/backtrace
+#   $ST_QEMU_USER -g 1234 -L $ST_QEMU_SYSROOT ./backtrace &
+#   gdb-multiarch -ex "set sysroot $ST_QEMU_SYSROOT" -ex "target remote :1234" -ex "break _st_md_thread_start" \
+#       -ex continue -ex bt ./backtrace
+# It works on every CPU, aarch64 too. The shell of x86_64 always uses the cross image and qemu-x86_64, because
+# gdb cannot trace a program in the container that Docker emulates for x86_64 on a host of another CPU.
 
 cd "$(dirname "$0")/.." || exit 1
 
@@ -55,6 +74,7 @@ case $CPU in
     mips64el)    TRIPLE=mips64el-linux-gnuabi64; QEMU=mips64el;    MACHINE=mips64el ;;
     *)
         echo "Usage: $0 <cpu> [utest|tools|tools-malloc|asan|all]" >&2
+        echo "       $0 <cpu> shell [command]" >&2
         echo "CPUs: x86_64 aarch64 i386 arm riscv64 loongarch64 mips mipsel mips64 mips64el" >&2
         exit 2
         ;;
@@ -62,6 +82,7 @@ esac
 case $WHAT in
     utest|tools|tools-malloc|asan) RUNS=$WHAT ;;
     all) RUNS="utest tools tools-malloc asan" ;;
+    shell) RUNS= ;;
     *) echo "Usage: $0 <cpu> [utest|tools|tools-malloc|asan|all]" >&2; exit 2 ;;
 esac
 
@@ -75,11 +96,12 @@ if [[ -z $ST_QEMU_CONTAINER ]]; then
         echo "Failed to hash auto/qemu/" >&2
         exit 1
     fi
-    # The cross image runs on the CPU of the Docker host. x86_64 on another host CPU runs in the amd64 image.
+    # The cross image runs on the CPU of the Docker host. x86_64 on another host CPU runs in the amd64 image,
+    # except in the shell, which needs gdb and qemu-x86_64.
     IMAGE=st-qemu:$HASH
     TARGET=cross
     PLATFORM=
-    if [[ $CPU == x86_64 && $(docker version --format '{{.Server.Arch}}') != amd64 ]]; then
+    if [[ $CPU == x86_64 && $WHAT != shell && $(docker version --format '{{.Server.Arch}}') != amd64 ]]; then
         IMAGE=st-qemu:$HASH-amd64
         TARGET=amd64
         PLATFORM="--platform linux/amd64"
@@ -93,8 +115,16 @@ if [[ -z $ST_QEMU_CONTAINER ]]; then
             echo "  docker rmi" $OLD
         fi
     fi
-    exec docker run --rm $PLATFORM -e ST_QEMU_CONTAINER=1 --user "$(id -u):$(id -g)" \
-        -v "$(pwd)":/st -w /st $IMAGE bash auto/qemu.sh "$CPU" "$WHAT"
+    # The shell reads its input from the host, with a terminal when the host has one.
+    TTY=
+    if [[ $WHAT == shell ]]; then
+        TTY=-i
+        if [[ -t 0 && -t 1 ]]; then
+            TTY=-it
+        fi
+    fi
+    exec docker run --rm $TTY $PLATFORM -e ST_QEMU_CONTAINER=1 --user "$(id -u):$(id -g)" \
+        -v "$(pwd)":/st -w /st $IMAGE bash auto/qemu.sh "$CPU" "$WHAT" "${@:3}"
 fi
 
 export CC=$TRIPLE-gcc$SUFFIX CXX=$TRIPLE-g++$SUFFIX AR=$TRIPLE-ar LD=$TRIPLE-ld RANLIB=$TRIPLE-ranlib
@@ -104,6 +134,15 @@ if [[ $(uname -m) != "$MACHINE" ]]; then
     ST_TOOL_RUN="qemu-$QEMU -L /usr/$TRIPLE"
 fi
 export ST_TOOL_RUN
+
+if [[ $WHAT == shell ]]; then
+    export ST_QEMU_USER=qemu-$QEMU ST_QEMU_SYSROOT=/usr/$TRIPLE
+    if [[ $# -gt 2 ]]; then
+        exec bash -c "${*:3}"
+    fi
+    echo "ST for $CPU: CC=$CC TARGETDIR=$TARGETDIR ST_TOOL_RUN=$ST_TOOL_RUN"
+    exec bash
+fi
 
 # Build the library with EXTRA_CFLAGS $1, then the utest, and run it. -B rebuilds the library, so it never
 # keeps objects built with other flags; the utest objects depend on the library and follow it.

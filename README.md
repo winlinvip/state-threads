@@ -250,6 +250,18 @@ line per run. A CPU that is the container's own runs natively. On a Docker host 
 Silicon, `x86_64` runs in an amd64 container, `st-qemu:<hash>-amd64`, which Docker emulates as a whole. Every
 other CPU runs with qemu-user, which is slower than the real CPU, and skips `asan` with a `SKIP` line.
 
+To build, run and debug a CPU by hand, `./auto/qemu.sh <cpu> shell` opens a bash in the image with the CPU's
+toolchain exported. The image has `gdb-multiarch`: start the program under the gdb stub of qemu-user, then
+attach to it, as the header of `auto/qemu.sh` shows:
+
+```bash
+./auto/qemu.sh riscv64 shell
+make linux-debug && make -C tools/backtrace && cd tools/backtrace
+$ST_QEMU_USER -g 1234 -L $ST_QEMU_SYSROOT ./backtrace &
+gdb-multiarch -ex "set sysroot $ST_QEMU_SYSROOT" -ex "target remote :1234" -ex "break _st_md_thread_start" \
+    -ex continue -ex bt ./backtrace
+```
+
 On macOS, build and run for either CPU; on Apple Silicon, x86_64 runs under Rosetta 2:
 
 ```bash

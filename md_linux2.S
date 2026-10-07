@@ -722,6 +722,23 @@
     #define JB_S6  9    /* R23-R31, S0-S8, Subroutine register variable */
     #define JB_S7  10   /* R23-R31, S0-S8, Subroutine register variable */
     #define JB_S8  11   /* R23-R31, S0-S8, Subroutine register variable */
+    #define JB_F24 12   /* F24-F31, FS0-FS7, callee-saved FP registers */
+    #define JB_F25 13
+    #define JB_F26 14
+    #define JB_F27 15
+    #define JB_F28 16
+    #define JB_F29 17
+    #define JB_F30 18
+    #define JB_F31 19
+
+    /* Save F24-F31 as doubles with a 64-bit FPU, their low 32 bits with a 32-bit one, and nothing with soft float. */
+    #if defined(__loongarch_frlen) && __loongarch_frlen >= 64
+        #define FP_SAVE fst.d
+        #define FP_LOAD fld.d
+    #elif defined(__loongarch_frlen) && __loongarch_frlen == 32
+        #define FP_SAVE fst.s
+        #define FP_LOAD fld.s
+    #endif
 
     	.file "md_linux.S"
     	.text
@@ -743,6 +760,16 @@
         st.d	$r29, $r4, 72         /* Save r29 to env[9],  *(long*)($r4+72) = r29 */
         st.d	$r30, $r4, 80         /* Save r30 to env[10],  *(long*)($r4+80) = r30 */
         st.d	$r31, $r4, 88         /* Save r31 to env[11],  *(long*)($r4+88) = r31 */
+#if defined(FP_SAVE)
+        FP_SAVE	$f24, $r4, JB_F24 * 8 /* Save f24-f31 to env[12]-env[19] */
+        FP_SAVE	$f25, $r4, JB_F25 * 8
+        FP_SAVE	$f26, $r4, JB_F26 * 8
+        FP_SAVE	$f27, $r4, JB_F27 * 8
+        FP_SAVE	$f28, $r4, JB_F28 * 8
+        FP_SAVE	$f29, $r4, JB_F29 * 8
+        FP_SAVE	$f30, $r4, JB_F30 * 8
+        FP_SAVE	$f31, $r4, JB_F31 * 8
+#endif
         addi.w	$r12, $r0, 0          /* Set return value to 0 */
         move    $r4, $r12             /* Set return value to 0 */
         jirl	$r0, $r1, 0           /* Return */
@@ -768,6 +795,16 @@
         ld.d	$r29, $r4, 72        /* Load r29 from env[9],  r29=*(long*)($r4+72) */
         ld.d	$r30, $r4, 80        /* Load r30 from env[10],  r30=*(long*)($r4+80) */
         ld.d	$r31, $r4, 88        /* Load r31 from env[11],  r31=*(long*)($r4+88) */
+#if defined(FP_LOAD)
+        FP_LOAD	$f24, $r4, JB_F24 * 8 /* Load f24-f31 from env[12]-env[19] */
+        FP_LOAD	$f25, $r4, JB_F25 * 8
+        FP_LOAD	$f26, $r4, JB_F26 * 8
+        FP_LOAD	$f27, $r4, JB_F27 * 8
+        FP_LOAD	$f28, $r4, JB_F28 * 8
+        FP_LOAD	$f29, $r4, JB_F29 * 8
+        FP_LOAD	$f30, $r4, JB_F30 * 8
+        FP_LOAD	$f31, $r4, JB_F31 * 8
+#endif
         addi.w	$r12, $r0, 1         /* Set return value to 1 */
         move    $r4, $r12            /* Set return value to 1 */
         jirl	$r0, $r1, 0          /* Return to the saved return address */

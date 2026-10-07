@@ -69,7 +69,7 @@ typedef struct _st_jmp_buf {
      * Linux    __mips64                long[20], 8 of them FP registers
      * Linux    __mips__                long[24], 12 of them 6 FP doubles, 8-byte aligned
      * Linux    __riscv                 long[26], 12 of them FP registers
-     * Linux    __loongarch64           long[12]
+     * Linux    __loongarch64           long[20], 8 of them FP registers
      * Cygwin64 __amd64__/__x86_64__    long[8]
      * Win64    _M_X64                  long long[36]
      */

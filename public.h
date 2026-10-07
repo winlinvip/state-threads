@@ -104,10 +104,10 @@ struct msghdr {
 #include <poll.h>
 #endif
 
-#define ST_VERSION	    "1.9.2"
+#define ST_VERSION	    "1.9.3"
 #define ST_VERSION_MAJOR    1
 #define ST_VERSION_MINOR    9
-#define ST_VERSION_PATCH    2
+#define ST_VERSION_PATCH    3
 
 /* Undefine this to remove the context switch callback feature. */
 #define ST_SWITCH_CB

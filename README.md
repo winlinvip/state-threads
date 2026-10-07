@@ -228,6 +228,35 @@ The `exception` tool is C++: it throws and catches C++ exceptions on coroutine s
 raises and catches SEH exceptions there. Windows builds C++ exceptions on SEH, which rejects frames outside
 the stack bounds in the TIB, so this works only because ST switches those bounds with each coroutine stack.
 
+## Every CPU: QEMU and Rosetta
+
+Every CPU starts a new coroutine in a small assembly entry, `_st_md_thread_start`; read
+[docs/win64_coroutine.md](docs/win64_coroutine.md) for how. To test the CPUs this machine cannot run, build
+for them and run the utest and the tools with QEMU user mode, in Docker:
+
+```bash
+./auto/qemu.sh riscv64
+./auto/qemu.sh mips utest
+```
+
+The CPUs are `x86_64`, `aarch64`, `i386`, `arm`, `riscv64`, `loongarch64`, `mips`, `mipsel`, `mips64`, and
+`mips64el`. The second argument picks `utest`, `tools` (`auto/tools.sh`), `tools-malloc` (with
+`EXTRA_CFLAGS=-DMALLOC_STACK`), or `all`, the default. The script builds the Docker image
+`st-qemu:ubuntu24.04` from `auto/qemu/Dockerfile` (Ubuntu 24.04, the cross compilers, and `qemu-user`) when
+it is missing, builds in place in `LINUX_<cpu>_qemu_DBG`, and prints one `RESULT <cpu> <run> PASS|FAIL` line
+per run. A CPU that is the container's own runs natively. QEMU is slower than the real CPU, and the few
+tests that qemu-user itself cannot run are skipped with a `SKIP` line.
+
+On macOS, build and run for either CPU; on Apple Silicon, x86_64 runs under Rosetta 2:
+
+```bash
+./auto/darwin.sh arm64
+./auto/darwin.sh x86_64
+```
+
+It takes the same second argument, and builds in place in `DARWIN_<cpu>_DBG`. For Windows x64, run the
+utest and the tools natively, as in [Windows: UTest](#windows-utest) and [Windows: Tools](#windows-tools).
+
 ## Linux: Coverage
 
 > Note: We use [Google test](https://github.com/google/googletest/releases/tag/release-1.11.0) in `utest/gtest-fit`.

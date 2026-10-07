@@ -33,7 +33,7 @@
 # GPL.
 
 # This is the full version of the libst library - modify carefully
-VERSION     = 1.9.2
+VERSION     = 1.9.3
 
 ##########################
 # Supported OSes:

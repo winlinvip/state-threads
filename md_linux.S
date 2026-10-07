@@ -81,6 +81,38 @@
 
     /****************************************************************/
 
+    /*
+     * void _st_md_thread_start(void), the entry of a new thread, never returns.
+     * MD_INIT_THREAD_ENTRY in md.h points the PC of the new thread's jmpbuf here, its SP at a
+     * null return address, 12 mod 16 as at any function entry, and its ebp at 0. So the first
+     * _st_md_cxt_restore of the thread enters this function as if called from address 0, with
+     * none of its creator's registers. The undefined return address ends DWARF unwinds here,
+     * and the null ebp ends frame-pointer walks.
+     */
+    .globl _st_md_thread_start
+        .type _st_md_thread_start, @function
+        .align 16
+    _st_md_thread_start:
+        .cfi_startproc
+        .cfi_undefined eip
+        xorl %ebp, %ebp
+        /* A call through the PLT of PIC code needs the GOT address in ebx. */
+        call 1f
+        .cfi_adjust_cfa_offset 4
+        1: popl %ebx
+        .cfi_adjust_cfa_offset -4
+        addl $_GLOBAL_OFFSET_TABLE_+(.-1b), %ebx
+        /* Align esp to 16 at the call. */
+        subl $12, %esp
+        .cfi_adjust_cfa_offset 12
+        call _st_thread_main@PLT
+        /* _st_thread_main calls st_thread_exit, which never returns. */
+        ud2
+        .cfi_endproc
+    .size _st_md_thread_start, .-_st_md_thread_start
+
+    /****************************************************************/
+
 
 
 

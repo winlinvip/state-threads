@@ -2201,13 +2201,18 @@ VOID TEST(IoOpenTest, FifoWriterWaitsForSlowReader)
     st_netfd_t writer = st_open(path.c_str(), O_WRONLY, 0);
     ASSERT_TRUE(writer != NULL);
 
+    std::string stream(1024 * 1024, 0);
+    for (size_t i = 0; i < stream.size(); i++) stream[i] = (char)(i % 251);
+    // A timeout counts from the scheduler's clock, which only moves when the scheduler runs. Building the stream takes
+    // about 90 ms on an emulated CPU, such as riscv64 under qemu-user, which would use up most of the write timeout, so
+    // let the scheduler update its clock first.
+    st_usleep(0);
+
     IoTestFifoConsumer c;
     c.fd_ = reader;
     st_thread_t trd = st_thread_create(io_fifo_consumer_coroutine, &c, 1, 0);
     ASSERT_TRUE(trd != NULL);
 
-    std::string stream(1024 * 1024, 0);
-    for (size_t i = 0; i < stream.size(); i++) stream[i] = (char)(i % 251);
     EXPECT_EQ((ssize_t)stream.size(), st_write(writer, stream.data(), stream.size(), ST_UTEST_TIMEOUT));
 
     EXPECT_EQ(0, st_netfd_close(writer));
